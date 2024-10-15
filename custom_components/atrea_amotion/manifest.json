@@ -1,0 +1,12 @@
+{
+  "codeowners": ["alexelite","xbezdick"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/alexelite/atrea_amotion/",
+  "domain": "atrea_amotion",
+  "integration_type": "device",
+  "iot_class": "local_polling",
+  "name": "Atrea aMotion",
+  "requirements": ["websockets","rel"],
+  "version": "1.0.0"
+}
