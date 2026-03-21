@@ -40,7 +40,8 @@ class AtreaAMotionClimate(ClimateEntity):
     """Representation of aMotion comfort control."""
 
     _attr_supported_features = (
-        ClimateEntityFeature.TARGET_TEMPERATURE
+        ClimateEntityFeature.FAN_MODE
+        | ClimateEntityFeature.TARGET_TEMPERATURE
         | ClimateEntityFeature.TURN_OFF
         | ClimateEntityFeature.TURN_ON
     )
@@ -123,6 +124,21 @@ class AtreaAMotionClimate(ClimateEntity):
         return HVACAction.IDLE
 
     @property
+    def fan_mode(self) -> str:
+        """Return the current fan mode."""
+        requested = self.coordinator.requested_value("fan_power_req")
+        if requested is None:
+            requested = self.coordinator.requested_value("fan_power_req_sup")
+        if requested is None:
+            requested = self.coordinator.requested_value("fan_power_req_eta")
+        return str(int(requested)) if requested is not None else "0"
+
+    @property
+    def fan_modes(self) -> list[str]:
+        """Return the available fan modes."""
+        return ["0", "20", "40", "50", "60", "70", "80", "90", "100"]
+
+    @property
     def extra_state_attributes(self) -> dict[str, str | None]:
         """Return raw requested/effective modes."""
         return {
@@ -142,6 +158,20 @@ class AtreaAMotionClimate(ClimateEntity):
         if ATTR_TEMPERATURE not in kwargs:
             return
         await self.coordinator.async_control({"temp_request": kwargs[ATTR_TEMPERATURE]})
+
+    async def async_set_fan_mode(self, fan_mode: str) -> None:
+        """Set requested fan power coherently across supported controls."""
+        value = int(fan_mode)
+        variables: dict[str, int] = {}
+        capabilities = self.coordinator.async_capabilities()
+        if capabilities.has_unified_fan_control:
+            variables["fan_power_req"] = value
+        if capabilities.has_supply_fan_control:
+            variables["fan_power_req_sup"] = value
+        if capabilities.has_extract_fan_control:
+            variables["fan_power_req_eta"] = value
+        if variables:
+            await self.coordinator.async_control(variables)
 
     async def async_turn_on(self) -> None:
         """Turn the entity on."""

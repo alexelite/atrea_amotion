@@ -84,8 +84,11 @@ class AtreaState:
     requests: dict[str, Any] = field(default_factory=dict)
     unit: dict[str, Any] = field(default_factory=dict)
     active_states: dict[str, Any] = field(default_factory=dict)
+    derived: dict[str, Any] = field(default_factory=dict)
     control_panel: dict[str, Any] = field(default_factory=dict)
     disposable_plan: dict[str, Any] = field(default_factory=dict)
+    ui_diagram_data: dict[str, Any] = field(default_factory=dict)
+    moments: dict[str, Any] = field(default_factory=dict)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -149,11 +152,14 @@ class AtreaAMotionCoordinator:
         self._discovery_ready = asyncio.Event()
         self._control_scheme_ready = asyncio.Event()
         self._ui_info_ready = asyncio.Event()
+        self._diagram_ready = asyncio.Event()
+        self._moments_ready = asyncio.Event()
         self._shutdown = False
         self._thread: threading.Thread | None = None
         self.ws: websocket.WebSocketApp | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._lock = asyncio.Lock()
+        self._pending_requests: dict[int, str] = {}
 
         self.capabilities = AtreaCapabilities()
         self.state = AtreaState(discovery={"type": model, "version": version, "name": name})
@@ -184,10 +190,14 @@ class AtreaAMotionCoordinator:
         await self.async_request("ui_control_scheme")
         await self.async_request("ui_diagram_scheme")
         await self.async_request("ui_info")
+        await self.async_request("ui_diagram_data")
+        await self.async_request("control_admin/config/moments/get")
         await self.async_request("control_panel")
         await asyncio.wait_for(self._discovery_ready.wait(), timeout=10)
         await asyncio.wait_for(self._control_scheme_ready.wait(), timeout=10)
         await asyncio.wait_for(self._ui_info_ready.wait(), timeout=10)
+        await asyncio.wait_for(self._diagram_ready.wait(), timeout=10)
+        await asyncio.wait_for(self._moments_ready.wait(), timeout=10)
 
     async def async_shutdown(self) -> None:
         """Stop the websocket connection."""
@@ -211,16 +221,29 @@ class AtreaAMotionCoordinator:
         """Return a measured unit value."""
         return self.state.unit.get(key)
 
+    def value(self, key: str) -> Any:
+        """Return a flattened value from the known state buckets."""
+        if key in self.state.derived:
+            return self.state.derived.get(key)
+        if key in self.state.unit:
+            return self.state.unit.get(key)
+        if key in self.state.requests:
+            return self.state.requests.get(key)
+        return self.state.control_panel.get(key)
+
     @Throttle(MIN_TIME_BETWEEN_UPDATES)
     async def async_update(self) -> None:
         """Refresh the current unit state."""
         await self.async_request("ui_info")
+        await self.async_request("ui_diagram_data")
+        await self.async_request("control_admin/config/moments/get")
 
     async def async_request(self, endpoint: str, args: Any = None) -> bool:
         """Send a websocket request."""
         async with self._lock:
             self._msg_id += 1
             payload = {"endpoint": endpoint, "id": self._msg_id, "args": args}
+            self._pending_requests[self._msg_id] = endpoint
             return await self.publish_wss(payload)
 
     async def async_control(self, variables: dict[str, Any]) -> bool:
@@ -313,7 +336,7 @@ class AtreaAMotionCoordinator:
         if self._loop is not None:
             self._loop.call_soon_threadsafe(self._ready.clear)
 
-    def on_pong(self, message) -> None:
+    def on_pong(self, ws, message) -> None:
         """Socket pong event."""
         LOGGER.debug("Websocket pong received")
 
@@ -327,7 +350,12 @@ class AtreaAMotionCoordinator:
     def on_message(self, ws, msg: str) -> None:
         """Socket message event."""
         self.sent_counter = 0
-        message = json.loads(msg)
+        try:
+            message = json.loads(msg)
+        except json.JSONDecodeError:
+            LOGGER.debug("Ignoring invalid JSON payload")
+            return
+
         if self._loop is not None:
             self._loop.call_soon_threadsafe(self._handle_message_on_loop, message)
 
@@ -356,7 +384,7 @@ class AtreaAMotionCoordinator:
         if event == "ui_info":
             self._apply_ui_info(payload or {})
         elif event == "control_panel":
-            self.state.control_panel = payload or {}
+            self._apply_control_panel(payload or {})
             self._notify_state_changed()
         elif event == "control_invoked":
             self.state.control_panel.setdefault("invoked", payload or {})
@@ -374,24 +402,50 @@ class AtreaAMotionCoordinator:
                 self._apply_diagram_scheme(response)
             elif endpoint == "ui_info":
                 self._apply_ui_info(response)
+            elif endpoint == "ui_diagram_data":
+                self._apply_ui_diagram_data(response)
+            elif endpoint == "control_admin/config/moments/get":
+                self._apply_moments(response.get("get", response))
             elif endpoint == "control_panel":
-                self.state.control_panel = response.get("control_panel", response)
+                self._apply_control_panel(response.get("control_panel", response))
                 self._notify_state_changed()
 
     def _endpoint_from_response(self, message: dict[str, Any]) -> str | None:
         """Best-effort endpoint detection for responses."""
+        message_id = message.get("id")
+        if isinstance(message_id, int):
+            endpoint = self._pending_requests.pop(message_id, None)
+            if endpoint is not None:
+                return endpoint
+
         response = message.get("response")
         if not isinstance(response, dict):
             return None
         if "board_number" in response or "board_type" in response:
             return "discovery"
-        if {"requests", "types", "unit"}.intersection(response):
-            if "types" in response and "requests" in response and "unit" in response:
-                return "ui_control_scheme"
+        if {"requests", "types", "unit"}.issubset(response):
+            return "ui_control_scheme"
         if "diagramType" in response or "components" in response:
             return "ui_diagram_scheme"
         if {"requests", "unit", "states"}.issubset(response):
             return "ui_info"
+        if {
+            "bypass_estim",
+            "damper_io_state",
+            "fan_eta_operating_time",
+            "fan_sup_operating_time",
+        }.intersection(response):
+            return "ui_diagram_data"
+        if {
+            "filters",
+            "lastFilterReset",
+            "m1_register",
+            "m2_register",
+            "uv_lamp_register",
+            "uv_lamp_service_life",
+            "get",
+        }.intersection(response):
+            return "control_admin/config/moments/get"
         if "control_panel" in response:
             return "control_panel"
         return None
@@ -430,8 +484,71 @@ class AtreaAMotionCoordinator:
         self.state.requests = response.get("requests", {})
         self.state.unit = response.get("unit", {})
         self.state.active_states = response.get("states", {}).get("active", {})
+        self._refresh_derived_state()
         self._ui_info_ready.set()
         self._notify_state_changed()
+
+    def _apply_ui_diagram_data(self, response: dict[str, Any]) -> None:
+        """Store live diagram values."""
+        self.state.ui_diagram_data = response
+        self._refresh_derived_state()
+        self._diagram_ready.set()
+        self._notify_state_changed()
+
+    def _apply_moments(self, response: dict[str, Any]) -> None:
+        """Store maintenance and filter counters."""
+        self.state.moments = response
+        self._refresh_derived_state()
+        self._moments_ready.set()
+        self._notify_state_changed()
+
+    def _apply_control_panel(self, response: dict[str, Any]) -> None:
+        """Store transient control panel values."""
+        self.state.control_panel = response
+        self._refresh_derived_state()
+
+    def _refresh_derived_state(self) -> None:
+        """Flatten cross-endpoint values that entities can consume directly."""
+        active_states = self.state.active_states
+        diagram = self.state.ui_diagram_data
+        moments = self.state.moments
+        filters = moments.get("filters") if isinstance(moments, dict) else None
+        last_filter_reset = moments.get("lastFilterReset") if isinstance(moments, dict) else None
+        stored = self.state.control_panel.get("stored", {})
+
+        self.state.derived = {
+            "bypass_estim": diagram.get("bypass_estim"),
+            "damper_io_state": diagram.get("damper_io_state"),
+            "fan_eta_operating_time": diagram.get("fan_eta_operating_time"),
+            "fan_sup_operating_time": diagram.get("fan_sup_operating_time"),
+            "filters": filters,
+            "filter_due_date": filters,
+            "lastFilterReset": last_filter_reset,
+            "last_filter_reset": last_filter_reset,
+            "m1_register": moments.get("m1_register"),
+            "m2_register": moments.get("m2_register"),
+            "uv_lamp_register": moments.get("uv_lamp_register"),
+            "uv_lamp_service_life": moments.get("uv_lamp_service_life"),
+            "active_state_count": len(active_states),
+            "active_states": active_states,
+            "active_state_names": [
+                state.get("name")
+                for state in active_states.values()
+                if isinstance(state, dict) and state.get("name")
+            ],
+            "filter_interval_active": any(
+                isinstance(state, dict) and state.get("name") == "FILTER_INTERVAL"
+                for state in active_states.values()
+            ),
+            "stored_bypass_control_req": stored.get("bypass_control_req"),
+            "stored_fan_power_req": stored.get("fan_power_req"),
+            "stored_fan_power_req_eta": stored.get("fan_power_req_eta"),
+            "stored_fan_power_req_sup": stored.get("fan_power_req_sup"),
+            "stored_temp_request": stored.get("temp_request"),
+            "stored_work_regime": stored.get("work_regime"),
+            "control_panel_visible": self.state.control_panel.get("visible"),
+            "control_panel_remaining": self.state.control_panel.get("remaining"),
+        }
 
     def _notify_state_changed(self) -> None:
         """Broadcast updated state."""

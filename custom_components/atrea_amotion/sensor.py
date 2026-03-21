@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import date, datetime
+from typing import Any
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -19,12 +21,35 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .const import DOMAIN
 
 
+def _date_from_parts(value: Any) -> date | None:
+    """Build a date from a websocket date object."""
+    if not isinstance(value, dict):
+        return None
+    year = value.get("year")
+    month = value.get("month")
+    day = value.get("day")
+    if not all(isinstance(part, int) for part in (year, month, day)):
+        return None
+    if year <= 1970 or month <= 0 or day <= 0:
+        return None
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def _date_from_epoch(value: Any) -> date | None:
+    """Build a date from an epoch timestamp."""
+    if not isinstance(value, (int, float)) or value <= 0:
+        return None
+    return datetime.fromtimestamp(value).date()
+
+
 @dataclass(frozen=True)
 class AtreaSensorDescription(SensorEntityDescription):
     """Description for aMotion sensor entities."""
 
     value_key: str = ""
-    source: str = "unit"
 
 
 ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
@@ -87,7 +112,6 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
         name="Extract fan factor",
         icon="mdi:fan",
         native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=SensorStateClass.MEASUREMENT,
         value_key="fan_eta_factor",
     ),
@@ -96,9 +120,38 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
         name="Supply fan factor",
         icon="mdi:fan",
         native_unit_of_measurement=PERCENTAGE,
-        device_class=SensorDeviceClass.POWER_FACTOR,
         state_class=SensorStateClass.MEASUREMENT,
         value_key="fan_sup_factor",
+    ),
+    AtreaSensorDescription(
+        key="bypass_estim",
+        name="Bypass estimation",
+        icon="mdi:pipe-valve",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="bypass_estim",
+    ),
+    AtreaSensorDescription(
+        key="damper_io_state",
+        name="Damper state",
+        icon="mdi:door-sliding",
+        value_key="damper_io_state",
+    ),
+    AtreaSensorDescription(
+        key="fan_eta_operating_time",
+        name="Extract fan operating time",
+        icon="mdi:timer-outline",
+        native_unit_of_measurement="h",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_key="fan_eta_operating_time",
+    ),
+    AtreaSensorDescription(
+        key="fan_sup_operating_time",
+        name="Supply fan operating time",
+        icon="mdi:timer-outline",
+        native_unit_of_measurement="h",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_key="fan_sup_operating_time",
     ),
     AtreaSensorDescription(
         key="season_current",
@@ -114,10 +167,79 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
         key="active_state_count",
         name="Active state count",
         icon="mdi:alert-outline",
-        value_key="active",
-        source="active",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="active_state_count",
+    ),
+    AtreaSensorDescription(
+        key="filter_interval_active",
+        name="Filter interval active",
+        icon="mdi:air-filter",
+        value_key="filter_interval_active",
+    ),
+    AtreaSensorDescription(
+        key="filter_due_date",
+        name="Filter service due",
+        icon="mdi:calendar-alert",
+        device_class=SensorDeviceClass.DATE,
+        value_key="filter_due_date",
+    ),
+    AtreaSensorDescription(
+        key="last_filter_reset",
+        name="Last filter reset",
+        icon="mdi:calendar-check",
+        device_class=SensorDeviceClass.DATE,
+        value_key="lastFilterReset",
+    ),
+    AtreaSensorDescription(
+        key="filter_service_days_remaining",
+        name="Filter service days remaining",
+        icon="mdi:calendar-clock",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="filter_due_date",
+    ),
+    AtreaSensorDescription(
+        key="m1_register",
+        name="Motor 1 register",
+        icon="mdi:counter",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_key="m1_register",
+    ),
+    AtreaSensorDescription(
+        key="m2_register",
+        name="Motor 2 register",
+        icon="mdi:counter",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_key="m2_register",
+    ),
+    AtreaSensorDescription(
+        key="uv_lamp_register",
+        name="UV lamp register",
+        icon="mdi:lightbulb",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_key="uv_lamp_register",
+    ),
+    AtreaSensorDescription(
+        key="uv_lamp_service_life",
+        name="UV lamp service life",
+        icon="mdi:lightbulb-on-outline",
+        native_unit_of_measurement="h",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="uv_lamp_service_life",
     ),
 )
+
+UNIT_SENSOR_KEYS = {
+    "temp_oda",
+    "temp_oda_mean",
+    "temp_ida",
+    "temp_eha",
+    "temp_sup",
+    "temp_eta",
+    "fan_eta_factor",
+    "fan_sup_factor",
+    "season_current",
+    "mode_current",
+}
 
 
 async def async_setup_entry(
@@ -139,9 +261,9 @@ async def async_setup_entry(
 
 def _is_supported_sensor(coordinator, description: AtreaSensorDescription) -> bool:
     """Return whether a sensor is supported by current capabilities."""
-    if description.source == "active":
-        return "active" in coordinator.async_capabilities().state_fields
-    return description.value_key in coordinator.async_capabilities().unit_fields
+    if description.value_key in UNIT_SENSOR_KEYS:
+        return description.value_key in coordinator.async_capabilities().unit_fields
+    return True
 
 
 class AtreaAMotionSensor(SensorEntity):
@@ -180,26 +302,31 @@ class AtreaAMotionSensor(SensorEntity):
         self.async_write_ha_state()
 
     @property
-    def native_value(self) -> float | int | str | None:
+    def native_value(self) -> float | int | str | date | None:
         """Return sensor value."""
-        if self.entity_description.source == "active":
-            return len(self.coordinator.async_state().active_states)
-        value = self.coordinator.unit_value(self.entity_description.value_key)
-        if isinstance(value, float):
-            return round(value, 1)
-        return value
+        key = self.entity_description.key
+        raw_value = self.coordinator.value(self.entity_description.value_key)
+
+        if key == "filter_due_date":
+            return _date_from_parts(raw_value)
+        if key == "last_filter_reset":
+            return _date_from_epoch(raw_value)
+        if key == "filter_service_days_remaining":
+            due_date = _date_from_parts(self.coordinator.value("filter_due_date"))
+            return (due_date - date.today()).days if due_date is not None else None
+        if key == "filter_interval_active":
+            return "on" if raw_value else "off"
+
+        if isinstance(raw_value, float):
+            return round(raw_value, 1)
+        return raw_value
 
     @property
-    def extra_state_attributes(self) -> dict[str, list[str] | dict[str, object]]:
+    def extra_state_attributes(self) -> dict[str, Any]:
         """Return additional attributes for composite sensors."""
-        if self.entity_description.source != "active":
-            return {}
-        active_states = self.coordinator.async_state().active_states
-        return {
-            "active_state_names": [
-                state.get("name")
-                for state in active_states.values()
-                if isinstance(state, dict) and state.get("name")
-            ],
-            "active_states": active_states,
-        }
+        if self.entity_description.key == "active_state_count":
+            return {
+                "active_state_names": self.coordinator.value("active_state_names") or [],
+                "active_states": self.coordinator.value("active_states") or {},
+            }
+        return {}
