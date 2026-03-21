@@ -378,6 +378,7 @@ class AtreaAMotionCoordinator:
         """Socket message event."""
         self.sent_counter = 0
         self._last_message_at = monotonic()
+        LOGGER.debug("Received websocket message: %s", msg)
         try:
             message = json.loads(msg)
         except json.JSONDecodeError:

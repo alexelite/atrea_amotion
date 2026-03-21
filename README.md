@@ -65,7 +65,7 @@ The current implementation focuses on:
 - bypass control as a select entity
 - telemetry and active-state sensors
 - bypass/runtime sensors such as `bypass_estim`, `damper_io_state`, and fan operating hours
-- filter/service sensors such as due date, last reset, days remaining, and maintenance registers
+- filter/service sensors such as next filter check, last filter replacement, days remaining, and maintenance registers
 
 Some protocol features are intentionally documented first and planned for later implementation, especially:
 
