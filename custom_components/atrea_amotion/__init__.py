@@ -7,6 +7,7 @@ import json
 import threading
 from dataclasses import dataclass, field
 from datetime import timedelta
+from time import monotonic
 from typing import Any
 
 import websocket
@@ -160,6 +161,7 @@ class AtreaAMotionCoordinator:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._lock = asyncio.Lock()
         self._pending_requests: dict[int, str] = {}
+        self._last_message_at = monotonic()
 
         self.capabilities = AtreaCapabilities()
         self.state = AtreaState(discovery={"type": model, "version": version, "name": name})
@@ -344,12 +346,15 @@ class AtreaAMotionCoordinator:
         """Socket open event."""
         LOGGER.debug("Websocket connected")
         self.socket_state = SOCK_CONNECTED
+        self.sent_counter = 0
+        self._last_message_at = monotonic()
         if self._loop is not None:
             asyncio.run_coroutine_threadsafe(self.authenticate_with_server(), self._loop)
 
     def on_message(self, ws, msg: str) -> None:
         """Socket message event."""
         self.sent_counter = 0
+        self._last_message_at = monotonic()
         try:
             message = json.loads(msg)
         except json.JSONDecodeError:
@@ -559,7 +564,11 @@ class AtreaAMotionCoordinator:
         json_message = json.dumps(payload)
         LOGGER.debug("Publishing websocket message: %s", json_message)
 
-        if self.sent_counter >= 5 and self.ws is not None:
+        if (
+            self.sent_counter >= 5
+            and self.ws is not None
+            and monotonic() - self._last_message_at > 30
+        ):
             LOGGER.warning("Websocket stopped answering, reconnecting")
             self.sent_counter = 0
             self.ws.close()
