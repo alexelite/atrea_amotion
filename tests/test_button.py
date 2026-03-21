@@ -15,6 +15,7 @@ class _MockCoordinator:
 
     def __init__(self) -> None:
         self.reset_called = False
+        self.reboot_called = False
 
     def value(self, key: str):
         if key == "filters":
@@ -27,9 +28,13 @@ class _MockCoordinator:
         self.reset_called = True
         return True
 
+    async def async_reboot(self) -> bool:
+        self.reboot_called = True
+        return True
 
-async def test_button_is_created_and_calls_reset(hass, MockConfigEntry) -> None:
-    """Filter reset button should call coordinator reset method."""
+
+async def test_buttons_are_created_and_call_actions(hass, MockConfigEntry) -> None:
+    """Button entities should call coordinator actions."""
     coordinator = _MockCoordinator()
     entry = MockConfigEntry(
         domain=DOMAIN,
@@ -46,6 +51,15 @@ async def test_button_is_created_and_calls_reset(hass, MockConfigEntry) -> None:
 
     await async_setup_entry(hass, entry, _async_add_entities)
 
-    assert len(added_entities) == 1
-    await added_entities[0].async_press()
+    assert len(added_entities) == 2
+
+    reboot_button = next(entity for entity in added_entities if entity.name == "Reboot unit")
+    filter_button = next(
+        entity for entity in added_entities if entity.name == "Confirm filter replacement"
+    )
+
+    await reboot_button.async_press()
+    await filter_button.async_press()
+
+    assert coordinator.reboot_called is True
     assert coordinator.reset_called is True

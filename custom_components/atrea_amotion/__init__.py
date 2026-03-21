@@ -320,6 +320,10 @@ class AtreaAMotionCoordinator:
             await self.async_request("update")
         return success
 
+    async def async_reboot(self) -> bool:
+        """Request a unit reboot."""
+        return await self.async_request("reboot")
+
     async def connect_wss(self) -> bool:
         """Connect and authorize the websocket session."""
         if self.socket_state == SOCK_CONNECTED and self._authorized:

@@ -68,6 +68,7 @@ The current implementation focuses on:
 - filter/service sensors such as next filter check, last filter replacement, days remaining, and maintenance registers
 - a button action to confirm filter replacement and reset the filter interval on the unit
 - switch actions to enable or disable Modbus TCP and firmware auto update
+- a maintenance button to request a unit reboot
 - a text action to edit the unit name from Home Assistant
 
 Some protocol features are intentionally documented first and planned for later implementation, especially:

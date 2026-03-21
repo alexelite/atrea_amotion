@@ -47,6 +47,13 @@ Useful websocket endpoints confirmed from captured startup traffic:
     - `{"active":false,"clients":[],"enable":false,"port":null}`
   - when enabled again, `modbus` returned:
     - `{"active":true,"clients":[],"enable":true,"port":502}`
+- `reboot`
+  - requests a device reboot
+  - observed request:
+    - `{"endpoint":"reboot","args":null}`
+  - manufacturer guidance seen in the native UI:
+    - switch the unit to `OFF` before reboot
+    - native UI shows a warning with accept/cancel, not an automatic shutdown sequence
 - `control_admin/config/moments/reset/filter`
   - confirms filter replacement / resets the filter interval
   - observed response:
