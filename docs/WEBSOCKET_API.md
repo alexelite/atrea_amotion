@@ -31,4 +31,6 @@ Behavior notes:
 
 - `ui_info.requests` and live `unit` values can be briefly out of sync right after a control command.
 - `control_panel.stored` may show pending values before `ui_info.requests` catches up.
+- the integration also flattens `control_panel.stored` into internal `stored_*` values plus
+  `control_panel_visible` and `control_panel_remaining`
 - `mode_current` can move through transient states like `STARTUP` before settling on `NORMAL`.

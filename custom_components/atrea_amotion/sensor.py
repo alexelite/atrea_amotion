@@ -188,7 +188,7 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
         name="Last filter reset",
         icon="mdi:calendar-check",
         device_class=SensorDeviceClass.DATE,
-        value_key="lastFilterReset",
+        value_key="last_filter_reset",
     ),
     AtreaSensorDescription(
         key="filter_service_days_remaining",
