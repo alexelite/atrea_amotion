@@ -67,6 +67,7 @@ The current implementation focuses on:
 - bypass/runtime sensors such as `bypass_estim`, `damper_io_state`, and fan operating hours
 - filter/service sensors such as next filter check, last filter replacement, days remaining, and maintenance registers
 - a button action to confirm filter replacement and reset the filter interval on the unit
+- a text action to edit the unit name from Home Assistant
 
 Some protocol features are intentionally documented first and planned for later implementation, especially:
 

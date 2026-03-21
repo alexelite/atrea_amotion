@@ -35,6 +35,14 @@ Useful websocket endpoints confirmed from captured startup traffic:
     - `lastFilterReset` changes to current date
     - `filters` moves to the next filter check date
     - `FILTER_INTERVAL` disappears from `ui_info.states.active`
+- `unit/set`
+  - updates editable unit metadata such as display name
+  - observed request:
+    - `{"endpoint":"unit/set","args":{"name":"Homer HRV"}}`
+  - observed follow-up behavior:
+    - emits `unit_config` event
+    - frontend refreshes `discovery`
+    - updated name appears in subsequent `discovery` response
 
 Behavior notes:
 

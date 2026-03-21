@@ -41,6 +41,7 @@ PLATFORMS = [
     Platform.FAN,
     Platform.SELECT,
     Platform.SENSOR,
+    Platform.TEXT,
 ]
 
 
@@ -289,6 +290,17 @@ class AtreaAMotionCoordinator:
             await self.async_request("ui_info")
         return success
 
+    async def async_set_unit_name(self, name: str) -> bool:
+        """Set the unit name."""
+        cleaned_name = name.strip()
+        if not cleaned_name:
+            return False
+
+        success = await self.async_request("unit/set", {"name": cleaned_name})
+        if success:
+            await self.async_request("discovery")
+        return success
+
     async def connect_wss(self) -> bool:
         """Connect and authorize the websocket session."""
         if self.socket_state == SOCK_CONNECTED and self._authorized:
@@ -429,6 +441,9 @@ class AtreaAMotionCoordinator:
         elif event == "control_panel":
             self._apply_control_panel(payload or {})
             self._notify_state_changed()
+        elif event == "unit_config":
+            self._notify_state_changed()
+            asyncio.create_task(self.async_request("discovery"))
         elif event == "control_invoked":
             self.state.control_panel.setdefault("invoked", payload or {})
             self._notify_state_changed()

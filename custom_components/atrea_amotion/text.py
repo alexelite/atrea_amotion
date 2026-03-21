@@ -1,8 +1,8 @@
-"""Button entities for Atrea aMotion."""
+"""Text entities for Atrea aMotion."""
 
 from __future__ import annotations
 
-from homeassistant.components.button import ButtonEntity
+from homeassistant.components.text import TextEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_NAME
 from homeassistant.core import HomeAssistant
@@ -18,25 +18,27 @@ async def async_setup_entry(
     entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up button entities from a config entry."""
+    """Set up text entities from a config entry."""
     coordinator = hass.data[DOMAIN][entry.entry_id]["atrea"]
-    if coordinator.value("filters") is None and coordinator.value("last_filter_reset") is None:
+    if not coordinator.async_state().discovery.get("name"):
         return
 
     sensor_name = entry.data.get(CONF_NAME) or "atrea"
-    async_add_entities([AtreaFilterResetButton(coordinator, entry, sensor_name)])
+    async_add_entities([AtreaUnitNameText(coordinator, entry, sensor_name)])
 
 
-class AtreaFilterResetButton(ButtonEntity):
-    """Button that confirms filter replacement on the unit."""
+class AtreaUnitNameText(TextEntity):
+    """Editable unit name."""
 
     _attr_has_entity_name = True
+    _attr_name = "Unit name"
+    _attr_native_min = 1
+    _attr_native_max = 64
+    _attr_mode = "text"
 
     def __init__(self, coordinator, entry: ConfigEntry, sensor_name: str) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}-reset-filter"
-        self._attr_name = "Confirm filter replacement"
-        self._attr_icon = "mdi:air-filter"
+        self._attr_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}-unit-name"
         self._device_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._device_unique_id)},
@@ -62,6 +64,11 @@ class AtreaFilterResetButton(ButtonEntity):
         """Update entity state."""
         self.async_write_ha_state()
 
-    async def async_press(self) -> None:
-        """Confirm filter replacement."""
-        await self.coordinator.async_reset_filter_interval()
+    @property
+    def native_value(self) -> str:
+        """Return current unit name."""
+        return self.coordinator.async_state().discovery.get("name", "")
+
+    async def async_set_value(self, value: str) -> None:
+        """Set a new unit name."""
+        await self.coordinator.async_set_unit_name(value)
