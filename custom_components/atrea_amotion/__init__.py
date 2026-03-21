@@ -35,7 +35,13 @@ SOCK_ERROR = "Error"
 N_RETRY = 5
 WS_RETRY = 10
 
-PLATFORMS = [Platform.CLIMATE, Platform.FAN, Platform.SELECT, Platform.SENSOR]
+PLATFORMS = [
+    Platform.BUTTON,
+    Platform.CLIMATE,
+    Platform.FAN,
+    Platform.SELECT,
+    Platform.SENSOR,
+]
 
 
 @dataclass(slots=True)
@@ -274,6 +280,14 @@ class AtreaAMotionCoordinator:
     async def async_control(self, variables: dict[str, Any]) -> bool:
         """Send control variables to the unit."""
         return await self.async_request("control", {"variables": variables})
+
+    async def async_reset_filter_interval(self) -> bool:
+        """Confirm filter replacement on the unit."""
+        success = await self.async_request("control_admin/config/moments/reset/filter")
+        if success:
+            await self.async_request("control_admin/config/moments/get")
+            await self.async_request("ui_info")
+        return success
 
     async def connect_wss(self) -> bool:
         """Connect and authorize the websocket session."""

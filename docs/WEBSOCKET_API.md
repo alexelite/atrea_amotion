@@ -26,6 +26,15 @@ Useful websocket endpoints confirmed from captured startup traffic:
   - returns Modbus TCP status such as `active`, `enable`, `port`, `clients`
 - `update`
   - returns firmware update metadata
+- `control_admin/config/moments/reset/filter`
+  - confirms filter replacement / resets the filter interval
+  - observed response:
+    - `{"moments_filter_reset":"OK"}`
+  - frontend follows it with `control_admin/config/moments/get`
+  - after reset:
+    - `lastFilterReset` changes to current date
+    - `filters` moves to the next filter check date
+    - `FILTER_INTERVAL` disappears from `ui_info.states.active`
 
 Behavior notes:
 
