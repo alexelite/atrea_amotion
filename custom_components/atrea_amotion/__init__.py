@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import threading
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -24,7 +25,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import Throttle
 
-from .const import DOMAIN, LOGGER
+from .const import CONF_DEBUG_LOGGING, DOMAIN, LOGGER
 
 MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=15)
 
@@ -95,6 +96,7 @@ class AtreaState:
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the integration from a config entry."""
     try:
+        _apply_logger_options(entry)
         atrea = AtreaAMotionCoordinator(
             hass=hass,
             name=entry.data[CONF_NAME],
@@ -109,7 +111,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady from err
 
     hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN][entry.entry_id] = {"atrea": atrea}
+    hass.data[DOMAIN][entry.entry_id] = {
+        "atrea": atrea,
+        "options_unsub": entry.add_update_listener(_async_entry_updated),
+    }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
@@ -118,8 +123,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     data = hass.data[DOMAIN].pop(entry.entry_id)
+    options_unsub = data.get("options_unsub")
+    if options_unsub is not None:
+        options_unsub()
     await data["atrea"].async_shutdown()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Reload the entry when its options change."""
+    _apply_logger_options(entry)
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
+def _apply_logger_options(entry: ConfigEntry) -> None:
+    """Apply runtime logger settings from entry options."""
+    debug_enabled = entry.options.get(
+        CONF_DEBUG_LOGGING,
+        entry.data.get(CONF_DEBUG_LOGGING, False),
+    )
+    LOGGER.setLevel(logging.DEBUG if debug_enabled else logging.NOTSET)
 
 
 class AtreaAMotionCoordinator:

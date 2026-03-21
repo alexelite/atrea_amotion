@@ -16,7 +16,7 @@ from homeassistant.const import (
 )
 from homeassistant.data_entry_flow import FlowResult
 
-from .const import API_TIMEOUT, DOMAIN, LOGGER
+from .const import API_TIMEOUT, CONF_DEBUG_LOGGING, DOMAIN, LOGGER
 
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
@@ -27,10 +27,16 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     }
 )
 
+
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Atrea aMotion."""
 
     VERSION = 1
+
+    @staticmethod
+    def async_get_options_flow(config_entry):
+        """Return the options flow handler."""
+        return AtreaOptionsFlowHandler(config_entry)
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -67,6 +73,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         "production_number"
                     )
                     user_input["mac"] = result_data.get("board_number")
+                    user_input[CONF_DEBUG_LOGGING] = False
 
                     unique_id = (
                         user_input["mac"]
@@ -91,4 +98,31 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="user", data_schema=STEP_USER_DATA_SCHEMA, errors=errors
+        )
+
+
+class AtreaOptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle Atrea aMotion options."""
+
+    def __init__(self, config_entry) -> None:
+        """Initialize options flow."""
+        self.config_entry = config_entry
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+        """Manage the options."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        current_value = self.config_entry.options.get(
+            CONF_DEBUG_LOGGING,
+            self.config_entry.data.get(CONF_DEBUG_LOGGING, False),
+        )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_DEBUG_LOGGING, default=current_value): bool,
+                }
+            ),
         )
