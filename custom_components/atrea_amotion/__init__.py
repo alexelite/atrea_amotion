@@ -677,7 +677,7 @@ class AtreaAMotionCoordinator:
 
     def _notify_state_changed(self) -> None:
         """Broadcast updated state."""
-        async_dispatcher_send(self.hass, self.update_signal)
+        self.hass.add_job(async_dispatcher_send, self.hass, self.update_signal)
 
     async def publish_wss(self, payload: dict[str, Any]) -> bool:
         """Publish JSON over websocket."""

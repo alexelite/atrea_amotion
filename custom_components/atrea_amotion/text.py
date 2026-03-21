@@ -64,7 +64,7 @@ class AtreaUnitNameText(TextEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Update entity state."""
-        self.async_write_ha_state()
+        self.schedule_update_ha_state()
 
     @property
     def native_value(self) -> str:
