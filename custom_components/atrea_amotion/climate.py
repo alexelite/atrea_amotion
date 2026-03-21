@@ -14,6 +14,21 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import DOMAIN
 
+
+def _coerce_temperature(value: object) -> float | None:
+    """Convert websocket temperature values to floats."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return round(float(value), 1)
+    if isinstance(value, str):
+        try:
+            return round(float(value), 1)
+        except ValueError:
+            return None
+    return None
+
+
 PRESET_TO_WORK_REGIME = {
     "Stand-by": "OFF",
     "Intervals": "AUTO",
@@ -89,8 +104,7 @@ class AtreaAMotionClimate(ClimateEntity):
     @property
     def current_temperature(self) -> float | None:
         """Return current indoor temperature."""
-        value = self.coordinator.unit_value("temp_ida")
-        return round(value, 1) if isinstance(value, float) else value
+        return _coerce_temperature(self.coordinator.unit_value("temp_ida"))
 
     @property
     def target_temperature(self) -> float | None:
@@ -98,7 +112,7 @@ class AtreaAMotionClimate(ClimateEntity):
         value = self.coordinator.value("stored_temp_request")
         if value is None:
             value = self.coordinator.requested_value("temp_request")
-        return round(value, 1) if isinstance(value, float) else value
+        return _coerce_temperature(value)
 
     @property
     def hvac_mode(self) -> HVACMode:
