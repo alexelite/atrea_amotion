@@ -26,6 +26,27 @@ Useful websocket endpoints confirmed from captured startup traffic:
   - returns Modbus TCP status such as `active`, `enable`, `port`, `clients`
 - `update`
   - returns firmware update metadata
+  - includes `autoupdate`, `check`, and `status`
+- `update/set`
+  - toggles firmware auto update
+  - observed requests:
+    - `{"endpoint":"update/set","args":{"autoupdate":false}}`
+    - `{"endpoint":"update/set","args":{"autoupdate":true}}`
+  - observed response:
+    - `{"autoupdate":false,"check":true}`
+  - frontend follows it with `update`
+- `modbus/set`
+  - toggles Modbus TCP exposure on the unit
+  - observed requests:
+    - `{"endpoint":"modbus/set","args":{"enable":false}}`
+    - `{"endpoint":"modbus/set","args":{"enable":true}}`
+  - observed response:
+    - `"OK"`
+  - frontend follows it with `modbus`
+  - when disabled, `modbus` returned:
+    - `{"active":false,"clients":[],"enable":false,"port":null}`
+  - when enabled again, `modbus` returned:
+    - `{"active":true,"clients":[],"enable":true,"port":502}`
 - `control_admin/config/moments/reset/filter`
   - confirms filter replacement / resets the filter interval
   - observed response:
@@ -50,4 +71,5 @@ Behavior notes:
 - `control_panel.stored` may show pending values before `ui_info.requests` catches up.
 - the integration also flattens `control_panel.stored` into internal `stored_*` values plus
   `control_panel_visible` and `control_panel_remaining`
+- `modbus` and `update` are stable readback endpoints after `modbus/set` and `update/set`
 - `mode_current` can move through transient states like `STARTUP` before settling on `NORMAL`.

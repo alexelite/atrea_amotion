@@ -41,6 +41,7 @@ PLATFORMS = [
     Platform.FAN,
     Platform.SELECT,
     Platform.SENSOR,
+    Platform.SWITCH,
     Platform.TEXT,
 ]
 
@@ -98,6 +99,8 @@ class AtreaState:
     disposable_plan: dict[str, Any] = field(default_factory=dict)
     ui_diagram_data: dict[str, Any] = field(default_factory=dict)
     moments: dict[str, Any] = field(default_factory=dict)
+    modbus: dict[str, Any] = field(default_factory=dict)
+    update: dict[str, Any] = field(default_factory=dict)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -224,6 +227,8 @@ class AtreaAMotionCoordinator:
         await self.async_request("ui_info")
         await self.async_request("ui_diagram_data")
         await self.async_request("control_admin/config/moments/get")
+        await self.async_request("modbus")
+        await self.async_request("update")
         await self.async_request("control_panel")
         await asyncio.wait_for(self._discovery_ready.wait(), timeout=10)
         await asyncio.wait_for(self._control_scheme_ready.wait(), timeout=10)
@@ -299,6 +304,20 @@ class AtreaAMotionCoordinator:
         success = await self.async_request("unit/set", {"name": cleaned_name})
         if success:
             await self.async_request("discovery")
+        return success
+
+    async def async_set_modbus_enabled(self, enabled: bool) -> bool:
+        """Enable or disable Modbus TCP."""
+        success = await self.async_request("modbus/set", {"enable": enabled})
+        if success:
+            await self.async_request("modbus")
+        return success
+
+    async def async_set_autoupdate_enabled(self, enabled: bool) -> bool:
+        """Enable or disable firmware auto update."""
+        success = await self.async_request("update/set", {"autoupdate": enabled})
+        if success:
+            await self.async_request("update")
         return success
 
     async def connect_wss(self) -> bool:
@@ -464,6 +483,10 @@ class AtreaAMotionCoordinator:
                 self._apply_ui_diagram_data(response)
             elif endpoint == "control_admin/config/moments/get":
                 self._apply_moments(response.get("get", response))
+            elif endpoint == "modbus":
+                self._apply_modbus(response)
+            elif endpoint == "update":
+                self._apply_update(response)
             elif endpoint == "control_panel":
                 self._apply_control_panel(response.get("control_panel", response))
                 self._notify_state_changed()
@@ -504,6 +527,10 @@ class AtreaAMotionCoordinator:
             "get",
         }.intersection(response):
             return "control_admin/config/moments/get"
+        if {"active", "enable", "clients", "port"}.intersection(response):
+            return "modbus"
+        if {"autoupdate", "check", "status"}.intersection(response):
+            return "update"
         if "control_panel" in response:
             return "control_panel"
         return None
@@ -565,6 +592,18 @@ class AtreaAMotionCoordinator:
         self.state.control_panel = response
         self._refresh_derived_state()
 
+    def _apply_modbus(self, response: dict[str, Any]) -> None:
+        """Store Modbus TCP state."""
+        self.state.modbus = response
+        self._refresh_derived_state()
+        self._notify_state_changed()
+
+    def _apply_update(self, response: dict[str, Any]) -> None:
+        """Store firmware update settings."""
+        self.state.update = response
+        self._refresh_derived_state()
+        self._notify_state_changed()
+
     def _refresh_derived_state(self) -> None:
         """Flatten cross-endpoint values that entities can consume directly."""
         active_states = self.state.active_states
@@ -573,6 +612,8 @@ class AtreaAMotionCoordinator:
         filters = moments.get("filters") if isinstance(moments, dict) else None
         last_filter_reset = moments.get("lastFilterReset") if isinstance(moments, dict) else None
         stored = self.state.control_panel.get("stored", {})
+        modbus = self.state.modbus
+        update = self.state.update
 
         self.state.derived = {
             "bypass_estim": diagram.get("bypass_estim"),
@@ -606,6 +647,13 @@ class AtreaAMotionCoordinator:
             "stored_work_regime": stored.get("work_regime"),
             "control_panel_visible": self.state.control_panel.get("visible"),
             "control_panel_remaining": self.state.control_panel.get("remaining"),
+            "modbus_active": modbus.get("active"),
+            "modbus_enabled": modbus.get("enable"),
+            "modbus_port": modbus.get("port"),
+            "modbus_clients": modbus.get("clients"),
+            "autoupdate_enabled": update.get("autoupdate"),
+            "update_check_enabled": update.get("check"),
+            "update_status": update.get("status"),
         }
 
     def _notify_state_changed(self) -> None:
