@@ -12,6 +12,9 @@ from custom_components.atrea_amotion.const import DOMAIN
 class _MockCapabilities:
     def __init__(self) -> None:
         self.has_climate_control = True
+        self.has_unified_fan_control = False
+        self.has_supply_fan_control = True
+        self.has_extract_fan_control = True
 
     def enum_for(self, variable: str) -> list[str]:
         if variable == "work_regime":
@@ -25,9 +28,19 @@ class _MockCoordinator:
     update_signal = "atrea_update"
 
     def __init__(self) -> None:
-        self.requests = {"work_regime": "AUTO", "temp_request": 21.0}
+        self.requests = {
+            "work_regime": "AUTO",
+            "temp_request": 21.0,
+            "fan_power_req_sup": 50,
+            "fan_power_req_eta": 50,
+        }
         self.unit = {"temp_ida": 22.0, "mode_current": "NORMAL", "season_current": "HEATING"}
-        self.derived = {"stored_work_regime": "AUTO", "stored_temp_request": 21.0}
+        self.derived = {
+            "stored_work_regime": "AUTO",
+            "stored_temp_request": 21.0,
+            "stored_fan_power_req_sup": 50,
+            "stored_fan_power_req_eta": 50,
+        }
         self.control_calls: list[dict[str, object]] = []
 
     def async_capabilities(self):
@@ -86,3 +99,12 @@ async def test_climate_uses_exact_unit_presets(hass, MockConfigEntry) -> None:
 
     await climate.async_set_hvac_mode(HVACMode.OFF)
     assert coordinator.control_calls[-1] == {"work_regime": "OFF"}
+
+    assert climate.fan_modes == [str(value) for value in range(0, 101, 10)]
+    assert climate.fan_mode == "50"
+
+    await climate.async_set_fan_mode("30")
+    assert coordinator.control_calls[-1] == {
+        "fan_power_req_sup": 30,
+        "fan_power_req_eta": 30,
+    }

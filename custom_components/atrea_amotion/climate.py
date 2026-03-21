@@ -29,6 +29,21 @@ def _coerce_temperature(value: object) -> float | None:
     return None
 
 
+def _coerce_percentage(value: object) -> int | None:
+    """Convert websocket fan request values to integer percentages."""
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        digits = value.strip().replace("%", "")
+        try:
+            return int(float(digits))
+        except ValueError:
+            return None
+    return None
+
+
 PRESET_TO_WORK_REGIME = {
     "Stand-by": "OFF",
     "Intervals": "AUTO",
@@ -169,17 +184,24 @@ class AtreaAMotionClimate(ClimateEntity):
     @property
     def fan_mode(self) -> str:
         """Return the current fan mode."""
-        requested = self.coordinator.requested_value("fan_power_req")
+        requested = self.coordinator.value("stored_fan_power_req")
+        if requested is None:
+            requested = self.coordinator.requested_value("fan_power_req")
+        if requested is None:
+            requested = self.coordinator.value("stored_fan_power_req_sup")
         if requested is None:
             requested = self.coordinator.requested_value("fan_power_req_sup")
         if requested is None:
+            requested = self.coordinator.value("stored_fan_power_req_eta")
+        if requested is None:
             requested = self.coordinator.requested_value("fan_power_req_eta")
-        return str(int(requested)) if requested is not None else "0"
+        percentage = _coerce_percentage(requested)
+        return str(percentage) if percentage is not None else "0"
 
     @property
     def fan_modes(self) -> list[str]:
         """Return the available fan modes."""
-        return ["0", "20", "40", "50", "60", "70", "80", "90", "100"]
+        return [str(value) for value in range(0, 101, 10)]
 
     @property
     def extra_state_attributes(self) -> dict[str, str | None]:
@@ -187,6 +209,12 @@ class AtreaAMotionClimate(ClimateEntity):
         return {
             "work_regime": self.coordinator.requested_value("work_regime"),
             "stored_work_regime": self.coordinator.value("stored_work_regime"),
+            "stored_fan_power_req": self.coordinator.value("stored_fan_power_req"),
+            "stored_fan_power_req_sup": self.coordinator.value("stored_fan_power_req_sup"),
+            "stored_fan_power_req_eta": self.coordinator.value("stored_fan_power_req_eta"),
+            "fan_power_req": self.coordinator.requested_value("fan_power_req"),
+            "fan_power_req_sup": self.coordinator.requested_value("fan_power_req_sup"),
+            "fan_power_req_eta": self.coordinator.requested_value("fan_power_req_eta"),
             "mode_current": self.coordinator.unit_value("mode_current"),
             "season_current": self.coordinator.unit_value("season_current"),
         }
@@ -221,7 +249,9 @@ class AtreaAMotionClimate(ClimateEntity):
 
     async def async_set_fan_mode(self, fan_mode: str) -> None:
         """Set requested fan power coherently across supported controls."""
-        value = int(fan_mode)
+        value = _coerce_percentage(fan_mode)
+        if value is None:
+            return
         variables: dict[str, int] = {}
         capabilities = self.coordinator.async_capabilities()
         if capabilities.has_unified_fan_control:
