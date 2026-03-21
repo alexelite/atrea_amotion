@@ -199,15 +199,17 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="m1_register",
-        name="Motor 1 register",
-        icon="mdi:counter",
+        name="Motor 1 operating time",
+        icon="mdi:timer-outline",
+        native_unit_of_measurement="h",
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_key="m1_register",
     ),
     AtreaSensorDescription(
         key="m2_register",
-        name="Motor 2 register",
-        icon="mdi:counter",
+        name="Motor 2 operating time",
+        icon="mdi:timer-outline",
+        native_unit_of_measurement="h",
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_key="m2_register",
     ),
@@ -316,6 +318,10 @@ class AtreaAMotionSensor(SensorEntity):
             return (due_date - date.today()).days if due_date is not None else None
         if key == "filter_interval_active":
             return "on" if raw_value else "off"
+        if key in {"m1_register", "m2_register"}:
+            if isinstance(raw_value, (int, float)):
+                return int(raw_value // 3600)
+            return None
 
         if isinstance(raw_value, float):
             return round(raw_value, 1)
@@ -329,4 +335,6 @@ class AtreaAMotionSensor(SensorEntity):
                 "active_state_names": self.coordinator.value("active_state_names") or [],
                 "active_states": self.coordinator.value("active_states") or {},
             }
+        if self.entity_description.key in {"m1_register", "m2_register"}:
+            return {"raw_seconds": self.coordinator.value(self.entity_description.value_key)}
         return {}
