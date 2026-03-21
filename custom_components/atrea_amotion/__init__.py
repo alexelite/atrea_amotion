@@ -584,7 +584,10 @@ class AtreaAMotionCoordinator:
 
     def _apply_ui_diagram_data(self, response: dict[str, Any]) -> None:
         """Store live diagram values."""
-        self.state.ui_diagram_data = response
+        diagram_data = response.get("ui_diagram_data", response)
+        self.state.ui_diagram_data = (
+            diagram_data if isinstance(diagram_data, dict) else {}
+        )
         self._refresh_derived_state()
         self._diagram_ready.set()
         self._notify_state_changed()
