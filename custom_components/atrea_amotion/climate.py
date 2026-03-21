@@ -14,14 +14,20 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import DOMAIN
 
-HVAC_MODE_MAP = {
-    HVACMode.OFF: "OFF",
-    HVACMode.AUTO: "AUTO",
-    HVACMode.FAN_ONLY: "VENTILATION",
-    HVACMode.COOL: "NIGHT_PRECOOLING",
+PRESET_TO_WORK_REGIME = {
+    "Stand-by": "OFF",
+    "Intervals": "AUTO",
+    "Ventilation": "VENTILATION",
+    "Night precooling": "NIGHT_PRECOOLING",
+    "Disbalance": "DISBALANCE",
 }
-WORK_REGIME_TO_HVAC = {value: key for key, value in HVAC_MODE_MAP.items()}
-WORK_REGIME_TO_HVAC["DISBALANCE"] = HVACMode.FAN_ONLY
+WORK_REGIME_TO_PRESET = {
+    "OFF": "Stand-by",
+    "AUTO": "Intervals",
+    "VENTILATION": "Ventilation",
+    "NIGHT_PRECOOLING": "Night precooling",
+    "DISBALANCE": "Disbalance",
+}
 
 
 async def async_setup_entry(
@@ -41,6 +47,7 @@ class AtreaAMotionClimate(ClimateEntity):
 
     _attr_supported_features = (
         ClimateEntityFeature.FAN_MODE
+        | ClimateEntityFeature.PRESET_MODE
         | ClimateEntityFeature.TARGET_TEMPERATURE
         | ClimateEntityFeature.TURN_OFF
         | ClimateEntityFeature.TURN_ON
@@ -88,27 +95,49 @@ class AtreaAMotionClimate(ClimateEntity):
     @property
     def target_temperature(self) -> float | None:
         """Return requested comfort temperature."""
-        value = self.coordinator.requested_value("temp_request")
+        value = self.coordinator.value("stored_temp_request")
+        if value is None:
+            value = self.coordinator.requested_value("temp_request")
         return round(value, 1) if isinstance(value, float) else value
 
     @property
     def hvac_mode(self) -> HVACMode:
-        """Return requested HVAC mode."""
-        return WORK_REGIME_TO_HVAC.get(
-            self.coordinator.requested_value("work_regime"), HVACMode.OFF
-        )
+        """Return simplified HVAC mode for Home Assistant."""
+        work_regime = self.coordinator.value("stored_work_regime")
+        if work_regime is None:
+            work_regime = self.coordinator.requested_value("work_regime")
+        if work_regime == "OFF":
+            return HVACMode.OFF
+        return HVACMode.AUTO
 
     @property
     def hvac_modes(self) -> list[HVACMode]:
-        """Return supported HVAC modes."""
+        """Return supported generic HVAC modes."""
+        return [HVACMode.OFF, HVACMode.AUTO]
+
+    @property
+    def preset_mode(self) -> str | None:
+        """Return the current unit work regime as a friendly preset."""
+        work_regime = self.coordinator.value("stored_work_regime")
+        if work_regime is None:
+            work_regime = self.coordinator.requested_value("work_regime")
+        return WORK_REGIME_TO_PRESET.get(work_regime)
+
+    @property
+    def preset_modes(self) -> list[str]:
+        """Return exact unit work regimes as presets."""
         available = self.coordinator.async_capabilities().enum_for("work_regime")
-        modes = [HVACMode.OFF]
+        modes: list[str] = []
+        if "OFF" in available:
+            modes.append("Stand-by")
         if "AUTO" in available:
-            modes.append(HVACMode.AUTO)
-        if "VENTILATION" in available or "DISBALANCE" in available:
-            modes.append(HVACMode.FAN_ONLY)
+            modes.append("Intervals")
+        if "VENTILATION" in available:
+            modes.append("Ventilation")
         if "NIGHT_PRECOOLING" in available:
-            modes.append(HVACMode.COOL)
+            modes.append("Night precooling")
+        if "DISBALANCE" in available:
+            modes.append("Disbalance")
         return modes
 
     @property
@@ -117,10 +146,10 @@ class AtreaAMotionClimate(ClimateEntity):
         mode_current = self.coordinator.unit_value("mode_current")
         if self.hvac_mode == HVACMode.OFF:
             return HVACAction.OFF
+        if self.preset_mode == "Night precooling":
+            return HVACAction.COOLING
         if mode_current in {"STARTUP", "NORMAL", "VENTILATION", "AUTO"}:
             return HVACAction.FAN
-        if self.hvac_mode == HVACMode.COOL:
-            return HVACAction.COOLING
         return HVACAction.IDLE
 
     @property
@@ -143,15 +172,32 @@ class AtreaAMotionClimate(ClimateEntity):
         """Return raw requested/effective modes."""
         return {
             "work_regime": self.coordinator.requested_value("work_regime"),
+            "stored_work_regime": self.coordinator.value("stored_work_regime"),
             "mode_current": self.coordinator.unit_value("mode_current"),
             "season_current": self.coordinator.unit_value("season_current"),
         }
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:
-        """Set new requested work regime."""
-        await self.coordinator.async_control(
-            {"work_regime": HVAC_MODE_MAP.get(hvac_mode, "OFF")}
-        )
+        """Set generic HVAC mode."""
+        if hvac_mode == HVACMode.OFF:
+            await self.coordinator.async_control({"work_regime": "OFF"})
+            return
+
+        if self.preset_mode in self.preset_modes:
+            await self.async_set_preset_mode(self.preset_mode)
+            return
+
+        if "Intervals" in self.preset_modes:
+            await self.async_set_preset_mode("Intervals")
+            return
+
+        if "Ventilation" in self.preset_modes:
+            await self.async_set_preset_mode("Ventilation")
+
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
+        """Set the exact unit work regime via preset."""
+        work_regime = PRESET_TO_WORK_REGIME[preset_mode]
+        await self.coordinator.async_control({"work_regime": work_regime})
 
     async def async_set_temperature(self, **kwargs) -> None:
         """Set new target temperature."""

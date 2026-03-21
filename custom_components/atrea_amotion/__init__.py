@@ -285,7 +285,12 @@ class AtreaAMotionCoordinator:
 
     async def async_control(self, variables: dict[str, Any]) -> bool:
         """Send control variables to the unit."""
-        return await self.async_request("control", {"variables": variables})
+        success = await self.async_request("control", {"variables": variables})
+        if success:
+            self._apply_optimistic_control(variables)
+            await self.async_request("control_panel")
+            await self.async_request("ui_info")
+        return success
 
     async def async_reset_filter_interval(self) -> bool:
         """Confirm filter replacement on the unit."""
@@ -595,6 +600,16 @@ class AtreaAMotionCoordinator:
         """Store transient control panel values."""
         self.state.control_panel = response
         self._refresh_derived_state()
+
+    def _apply_optimistic_control(self, variables: dict[str, Any]) -> None:
+        """Apply a local optimistic update until the unit echoes fresh state."""
+        self.state.requests.update(variables)
+        stored = self.state.control_panel.setdefault("stored", {})
+        current = self.state.control_panel.setdefault("current", {})
+        stored.update(variables)
+        current.update(variables)
+        self._refresh_derived_state()
+        self._notify_state_changed()
 
     def _apply_modbus(self, response: dict[str, Any]) -> None:
         """Store Modbus TCP state."""
