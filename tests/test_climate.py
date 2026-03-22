@@ -15,6 +15,10 @@ class _MockCapabilities:
         self.has_unified_fan_control = False
         self.has_supply_fan_control = True
         self.has_extract_fan_control = True
+        self.base_states = {
+            105: {"purpose": "notify", "severity": 3},
+            999: {"purpose": "alarm_sr", "severity": 5},
+        }
 
     def enum_for(self, variable: str) -> list[str]:
         if variable == "work_regime":
@@ -40,7 +44,22 @@ class _MockCoordinator:
             "stored_temp_request": 21.0,
             "stored_fan_power_req_sup": 50,
             "stored_fan_power_req_eta": 50,
+            "bypass_estim": 42,
+            "damper_io_state": True,
+            "filter_due_date": {"day": 25, "month": 3, "year": 2026},
+            "warning": True,
+            "fault": False,
         }
+        self.unit.update(
+            {
+                "temp_oda": 7.5,
+                "temp_eta": 21.2,
+                "temp_sup": 18.4,
+                "temp_eha": 20.7,
+                "fan_sup_factor": 48,
+                "fan_eta_factor": 50,
+            }
+        )
         self.control_calls: list[dict[str, object]] = []
 
     def async_capabilities(self):
@@ -108,3 +127,18 @@ async def test_climate_uses_exact_unit_presets(hass, MockConfigEntry) -> None:
         "fan_power_req_sup": 30,
         "fan_power_req_eta": 30,
     }
+
+    attrs = climate.extra_state_attributes
+    assert attrs["outside_air_temperature"] == 7.5
+    assert attrs["extract_air_temperature"] == 21.2
+    assert attrs["supply_air_temperature"] == 18.4
+    assert attrs["exhaust_air_temperature"] == 20.7
+    assert attrs["supply_fan_speed_percent"] == 48
+    assert attrs["extract_fan_speed_percent"] == 50
+    assert attrs["bypass_position_percent"] == 42
+    assert attrs["oda_damper_percent"] == 100
+    assert attrs["eta_damper_percent"] == 100
+    assert attrs["current_mode"] == "NORMAL"
+    assert attrs["filter_days_remaining"] is not None
+    assert attrs["warning"] is True
+    assert attrs["fault"] is False

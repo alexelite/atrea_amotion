@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import date
 
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, HVACMode
 from homeassistant.components.climate.const import HVACAction
@@ -42,6 +43,23 @@ def _coerce_percentage(value: object) -> int | None:
         except ValueError:
             return None
     return None
+
+
+def _date_from_parts(value: object) -> date | None:
+    """Convert structured websocket dates to date objects."""
+    if not isinstance(value, dict):
+        return None
+    year = value.get("year")
+    month = value.get("month")
+    day = value.get("day")
+    if not all(isinstance(part, int) for part in (year, month, day)):
+        return None
+    if year <= 1970 or month <= 0 or day <= 0:
+        return None
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
 
 
 PRESET_TO_WORK_REGIME = {
@@ -204,8 +222,14 @@ class AtreaAMotionClimate(ClimateEntity):
         return [str(value) for value in range(0, 101, 10)]
 
     @property
-    def extra_state_attributes(self) -> dict[str, str | None]:
+    def extra_state_attributes(self) -> dict[str, object]:
         """Return raw requested/effective modes."""
+        filter_due_date = _date_from_parts(self.coordinator.value("filter_due_date"))
+        filter_days_remaining = (
+            (filter_due_date - date.today()).days if filter_due_date is not None else None
+        )
+        damper_open = self.coordinator.value("damper_io_state")
+        damper_percent = None if damper_open is None else (100 if damper_open else 0)
         return {
             "work_regime": self.coordinator.requested_value("work_regime"),
             "stored_work_regime": self.coordinator.value("stored_work_regime"),
@@ -217,6 +241,19 @@ class AtreaAMotionClimate(ClimateEntity):
             "fan_power_req_eta": self.coordinator.requested_value("fan_power_req_eta"),
             "mode_current": self.coordinator.unit_value("mode_current"),
             "season_current": self.coordinator.unit_value("season_current"),
+            "outside_air_temperature": self.coordinator.unit_value("temp_oda"),
+            "extract_air_temperature": self.coordinator.unit_value("temp_eta"),
+            "supply_air_temperature": self.coordinator.unit_value("temp_sup"),
+            "exhaust_air_temperature": self.coordinator.unit_value("temp_eha"),
+            "supply_fan_speed_percent": self.coordinator.unit_value("fan_sup_factor"),
+            "extract_fan_speed_percent": self.coordinator.unit_value("fan_eta_factor"),
+            "bypass_position_percent": self.coordinator.value("bypass_estim"),
+            "oda_damper_percent": damper_percent,
+            "eta_damper_percent": damper_percent,
+            "current_mode": self.coordinator.unit_value("mode_current"),
+            "filter_days_remaining": filter_days_remaining,
+            "warning": self.coordinator.value("warning"),
+            "fault": self.coordinator.value("fault"),
         }
 
     async def async_set_hvac_mode(self, hvac_mode: HVACMode) -> None:

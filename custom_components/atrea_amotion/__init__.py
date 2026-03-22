@@ -59,6 +59,7 @@ class AtreaCapabilities:
     enum_values: dict[str, list[str]] = field(default_factory=dict)
     range_types: dict[str, dict[str, Any]] = field(default_factory=dict)
     diagram_components: dict[str, Any] = field(default_factory=dict)
+    base_states: dict[int, dict[str, Any]] = field(default_factory=dict)
 
     @property
     def has_supply_fan_control(self) -> bool:
@@ -620,6 +621,11 @@ class AtreaAMotionCoordinator:
     def _apply_diagram_scheme(self, response: dict[str, Any]) -> None:
         """Store supplemental diagram metadata."""
         self.capabilities.diagram_components = response.get("components", {})
+        self.capabilities.base_states = {
+            item["id"]: item
+            for item in response.get("baseStates", [])
+            if isinstance(item, dict) and isinstance(item.get("id"), int)
+        }
         self._notify_state_changed()
 
     def _apply_ui_info(self, response: dict[str, Any]) -> None:
@@ -767,6 +773,22 @@ class AtreaAMotionCoordinator:
                 for state in active_states.values()
                 if isinstance(state, dict) and state.get("name")
             ],
+            "warning": any(
+                (
+                    self.capabilities.base_states.get(int(state_id), {}).get("purpose") in {"warning", "notify"}
+                    or self.capabilities.base_states.get(int(state_id), {}).get("severity") in {3, 4}
+                )
+                for state_id, state in active_states.items()
+                if isinstance(state, dict) and state.get("active") and str(state_id).isdigit()
+            ),
+            "fault": any(
+                (
+                    str(self.capabilities.base_states.get(int(state_id), {}).get("purpose", "")).startswith("alarm")
+                    or (self.capabilities.base_states.get(int(state_id), {}).get("severity") or 0) >= 5
+                )
+                for state_id, state in active_states.items()
+                if isinstance(state, dict) and state.get("active") and str(state_id).isdigit()
+            ),
             "filter_interval_active": any(
                 isinstance(state, dict) and state.get("name") == "FILTER_INTERVAL"
                 for state in active_states.values()
