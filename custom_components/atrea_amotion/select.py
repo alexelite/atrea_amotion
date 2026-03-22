@@ -12,6 +12,26 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN
 
 
+BYPASS_LABELS = {
+    "AUTO": "Auto",
+    "OPEN": "Open",
+    "CLOSED": "Closed",
+}
+
+
+def _label_for_option(option: str) -> str:
+    """Return a user-friendly label for a raw bypass option."""
+    return BYPASS_LABELS.get(option, option.replace("_", " ").title())
+
+
+def _option_for_label(label: str, raw_options: list[str]) -> str:
+    """Return the raw bypass option for a selected label."""
+    for option in raw_options:
+        if _label_for_option(option) == label:
+            return option
+    return label
+
+
 async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Set up select entities."""
     coordinator = hass.data[DOMAIN][entry.entry_id]["atrea"]
@@ -29,9 +49,10 @@ class AtreaBypassSelect(SelectEntity):
 
     def __init__(self, coordinator, entry: ConfigEntry, sensor_name: str) -> None:
         self.coordinator = coordinator
+        self._raw_options = coordinator.async_capabilities().enum_for("bypass_control_req")
         self._attr_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}-bypass"
         self._attr_name = "Bypass mode"
-        self._attr_options = coordinator.async_capabilities().enum_for("bypass_control_req")
+        self._attr_options = [_label_for_option(option) for option in self._raw_options]
         self._device_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}"
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, self._device_unique_id)},
@@ -60,8 +81,15 @@ class AtreaBypassSelect(SelectEntity):
     @property
     def current_option(self) -> str | None:
         """Return selected bypass mode."""
-        return self.coordinator.requested_value("bypass_control_req")
+        option = self.coordinator.value("stored_bypass_control_req") or self.coordinator.requested_value(
+            "bypass_control_req"
+        )
+        if option is None:
+            return None
+        return _label_for_option(option)
 
     async def async_select_option(self, option: str) -> None:
         """Set bypass mode."""
-        await self.coordinator.async_control({"bypass_control_req": option})
+        await self.coordinator.async_control(
+            {"bypass_control_req": _option_for_label(option, self._raw_options)}
+        )
