@@ -46,6 +46,11 @@ def _date_from_epoch(value: Any) -> date | None:
     return datetime.fromtimestamp(value).date()
 
 
+def _date_from_any(value: Any) -> date | None:
+    """Build a date from either structured parts or an epoch timestamp."""
+    return _date_from_parts(value) or _date_from_epoch(value)
+
+
 @dataclass(frozen=True)
 class AtreaSensorDescription(SensorEntityDescription):
     """Description for aMotion sensor entities."""
@@ -325,7 +330,7 @@ class AtreaAMotionSensor(SensorEntity):
         if key == "filter_due_date":
             return _date_from_parts(raw_value)
         if key == "last_filter_reset":
-            return _date_from_epoch(raw_value)
+            return _date_from_any(raw_value)
         if key == "filter_service_days_remaining":
             due_date = _date_from_parts(self.coordinator.value("filter_due_date"))
             return (due_date - date.today()).days if due_date is not None else None
