@@ -28,6 +28,9 @@ from homeassistant.util import Throttle
 from .const import CONF_DEBUG_LOGGING, DOMAIN, LOGGER
 
 MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=15)
+PERIODIC_REFRESH_INTERVAL = 15
+CONTROL_BURST_REFRESH_INTERVAL = 1
+CONTROL_BURST_REFRESH_CYCLES = 20
 
 SOCK_CONNECTED = "Open"
 SOCK_DISCONNECTED = "Close"
@@ -190,6 +193,8 @@ class AtreaAMotionCoordinator:
         self._moments_ready = asyncio.Event()
         self._shutdown = False
         self._thread: threading.Thread | None = None
+        self._refresh_task: asyncio.Task | None = None
+        self._control_burst_task: asyncio.Task | None = None
         self.ws: websocket.WebSocketApp | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._lock = asyncio.Lock()
@@ -235,10 +240,17 @@ class AtreaAMotionCoordinator:
         await asyncio.wait_for(self._ui_info_ready.wait(), timeout=10)
         await asyncio.wait_for(self._diagram_ready.wait(), timeout=10)
         await asyncio.wait_for(self._moments_ready.wait(), timeout=10)
+        self._ensure_refresh_task()
 
     async def async_shutdown(self) -> None:
         """Stop the websocket connection."""
         self._shutdown = True
+        if self._refresh_task is not None:
+            self._refresh_task.cancel()
+            self._refresh_task = None
+        if self._control_burst_task is not None:
+            self._control_burst_task.cancel()
+            self._control_burst_task = None
         if self.ws is not None:
             await self.hass.async_add_executor_job(self.ws.close)
 
@@ -290,6 +302,7 @@ class AtreaAMotionCoordinator:
             self._apply_optimistic_control(variables)
             await self.async_request("control_panel")
             await self.async_request("ui_info")
+            self._schedule_control_burst_refresh()
         return success
 
     async def async_reset_filter_interval(self) -> bool:
@@ -328,6 +341,42 @@ class AtreaAMotionCoordinator:
     async def async_reboot(self) -> bool:
         """Request a unit reboot."""
         return await self.async_request("reboot")
+
+    def _ensure_refresh_task(self) -> None:
+        """Start the periodic refresh task if needed."""
+        if self._refresh_task is None or self._refresh_task.done():
+            self._refresh_task = asyncio.create_task(self._periodic_refresh_loop())
+
+    async def _periodic_refresh_loop(self) -> None:
+        """Keep state fresh even when the unit does not emit push events."""
+        try:
+            while not self._shutdown:
+                await asyncio.sleep(PERIODIC_REFRESH_INTERVAL)
+                if self._shutdown:
+                    break
+                await self.async_update()
+                await self.async_request("control_panel")
+        except asyncio.CancelledError:
+            return
+
+    def _schedule_control_burst_refresh(self) -> None:
+        """Refresh rapidly for a short period after a control change."""
+        if self._control_burst_task is not None and not self._control_burst_task.done():
+            self._control_burst_task.cancel()
+        self._control_burst_task = asyncio.create_task(self._control_burst_refresh_loop())
+
+    async def _control_burst_refresh_loop(self) -> None:
+        """Poll frequently after control changes to capture delayed transitions."""
+        try:
+            for _ in range(CONTROL_BURST_REFRESH_CYCLES):
+                if self._shutdown:
+                    break
+                await asyncio.sleep(CONTROL_BURST_REFRESH_INTERVAL)
+                await self.async_request("ui_diagram_data")
+                await self.async_request("ui_info")
+                await self.async_request("control_panel")
+        except asyncio.CancelledError:
+            return
 
     async def connect_wss(self) -> bool:
         """Connect and authorize the websocket session."""
