@@ -17,6 +17,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_NAME, PERCENTAGE, UnitOfTemperature
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity import EntityCategory
 
 from .const import DOMAIN
 
@@ -201,6 +202,8 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
         key="m1_register",
         name="Motor 1 operating time",
         icon="mdi:timer-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
         native_unit_of_measurement="h",
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_key="m1_register",
@@ -209,9 +212,19 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
         key="m2_register",
         name="Motor 2 operating time",
         icon="mdi:timer-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
         native_unit_of_measurement="h",
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_key="m2_register",
+    ),
+    AtreaSensorDescription(
+        key="motor_role_mapping",
+        name="Motor role mapping",
+        icon="mdi:swap-horizontal",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_key="motor_role_mapping",
     ),
     AtreaSensorDescription(
         key="uv_lamp_register",
@@ -322,6 +335,8 @@ class AtreaAMotionSensor(SensorEntity):
             if isinstance(raw_value, (int, float)):
                 return int(raw_value // 3600)
             return None
+        if key == "motor_role_mapping":
+            return raw_value
 
         if isinstance(raw_value, float):
             return round(raw_value, 1)
@@ -337,4 +352,16 @@ class AtreaAMotionSensor(SensorEntity):
             }
         if self.entity_description.key in {"m1_register", "m2_register"}:
             return {"raw_seconds": self.coordinator.value(self.entity_description.value_key)}
+        if self.entity_description.key == "motor_role_mapping":
+            return {
+                "motor_1_hours": self.coordinator.value("m1_register"),
+                "motor_2_hours": self.coordinator.value("m2_register"),
+                "supply_fan_hours": self.coordinator.value("fan_sup_operating_time"),
+                "extract_fan_hours": self.coordinator.value("fan_eta_operating_time"),
+                "explanation": (
+                    "Mapping is inferred by comparing motor counters with supply/extract "
+                    "fan operating hours. Equal counters are ambiguous, which is common on "
+                    "reversible units or when both fans accumulated the same runtime."
+                ),
+            }
         return {}

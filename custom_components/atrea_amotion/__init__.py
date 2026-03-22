@@ -626,6 +626,61 @@ class AtreaAMotionCoordinator:
         self._refresh_derived_state()
         self._notify_state_changed()
 
+    @staticmethod
+    def _as_int(value: Any) -> int | None:
+        """Convert numeric-like values to int."""
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, str):
+            try:
+                return int(float(value))
+            except ValueError:
+                return None
+        return None
+
+    def _infer_motor_role_mapping(
+        self,
+        motor_1_seconds: Any,
+        motor_2_seconds: Any,
+        supply_hours: Any,
+        extract_hours: Any,
+    ) -> str:
+        """Infer whether raw motors can be mapped to supply/extract fans."""
+        motor_1_hours = (
+            int(motor_1_seconds // 3600)
+            if isinstance(motor_1_seconds, (int, float))
+            else None
+        )
+        motor_2_hours = (
+            int(motor_2_seconds // 3600)
+            if isinstance(motor_2_seconds, (int, float))
+            else None
+        )
+        supply_value = self._as_int(supply_hours)
+        extract_value = self._as_int(extract_hours)
+
+        if None in {motor_1_hours, motor_2_hours, supply_value, extract_value}:
+            return "unknown"
+
+        m1_is_supply = motor_1_hours == supply_value
+        m1_is_extract = motor_1_hours == extract_value
+        m2_is_supply = motor_2_hours == supply_value
+        m2_is_extract = motor_2_hours == extract_value
+
+        if m1_is_supply and m2_is_extract and not (m1_is_extract or m2_is_supply):
+            return "M1=supply, M2=extract"
+        if m1_is_extract and m2_is_supply and not (m1_is_supply or m2_is_extract):
+            return "M1=extract, M2=supply"
+        if (
+            motor_1_hours == motor_2_hours
+            and supply_value == extract_value
+            and motor_1_hours == supply_value
+        ):
+            return "ambiguous"
+        return "ambiguous"
+
     def _refresh_derived_state(self) -> None:
         """Flatten cross-endpoint values that entities can consume directly."""
         active_states = self.state.active_states
@@ -648,6 +703,12 @@ class AtreaAMotionCoordinator:
             "last_filter_reset": last_filter_reset,
             "m1_register": moments.get("m1_register"),
             "m2_register": moments.get("m2_register"),
+            "motor_role_mapping": self._infer_motor_role_mapping(
+                moments.get("m1_register"),
+                moments.get("m2_register"),
+                diagram.get("fan_sup_operating_time"),
+                diagram.get("fan_eta_operating_time"),
+            ),
             "uv_lamp_register": moments.get("uv_lamp_register"),
             "uv_lamp_service_life": moments.get("uv_lamp_service_life"),
             "active_state_count": len(active_states),
