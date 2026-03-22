@@ -51,11 +51,27 @@ def _date_from_any(value: Any) -> date | None:
     return _date_from_parts(value) or _date_from_epoch(value)
 
 
+def _number_from_any(value: Any) -> float | int | None:
+    """Convert numeric-like values to a real number."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        try:
+            number = float(value)
+        except ValueError:
+            return None
+        return int(number) if number.is_integer() else number
+    return None
+
+
 @dataclass(frozen=True)
 class AtreaSensorDescription(SensorEntityDescription):
     """Description for aMotion sensor entities."""
 
     value_key: str = ""
+    request_key: str | None = None
 
 
 ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
@@ -112,6 +128,33 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
         device_class=SensorDeviceClass.TEMPERATURE,
         state_class=SensorStateClass.MEASUREMENT,
         value_key="temp_eta",
+    ),
+    AtreaSensorDescription(
+        key="fan_eta_requested",
+        name="Extract fan requested speed",
+        icon="mdi:fan-chevron-down",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="stored_fan_power_req_eta",
+        request_key="fan_power_req_eta",
+    ),
+    AtreaSensorDescription(
+        key="fan_sup_requested",
+        name="Supply fan requested speed",
+        icon="mdi:fan-chevron-up",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="stored_fan_power_req_sup",
+        request_key="fan_power_req_sup",
+    ),
+    AtreaSensorDescription(
+        key="fan_requested",
+        name="Ventilation fan requested speed",
+        icon="mdi:fan-plus",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="stored_fan_power_req",
+        request_key="fan_power_req",
     ),
     AtreaSensorDescription(
         key="fan_eta_factor",
@@ -281,6 +324,8 @@ async def async_setup_entry(
 
 def _is_supported_sensor(coordinator, description: AtreaSensorDescription) -> bool:
     """Return whether a sensor is supported by current capabilities."""
+    if description.request_key is not None:
+        return description.request_key in coordinator.async_capabilities().requests
     if description.value_key in UNIT_SENSOR_KEYS:
         return description.value_key in coordinator.async_capabilities().unit_fields
     return True
@@ -336,6 +381,8 @@ class AtreaAMotionSensor(SensorEntity):
             return (due_date - date.today()).days if due_date is not None else None
         if key == "filter_interval_active":
             return "on" if raw_value else "off"
+        if key in {"fan_eta_requested", "fan_sup_requested", "fan_requested"}:
+            return _number_from_any(raw_value)
         if key in {"m1_register", "m2_register"}:
             if isinstance(raw_value, (int, float)):
                 return int(raw_value // 3600)

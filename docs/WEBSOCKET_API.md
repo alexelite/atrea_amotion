@@ -8,6 +8,13 @@ Useful websocket endpoints confirmed from captured startup traffic:
   - returns model, firmware version, board number and cloud metadata
 - `ui_info`
   - returns requested values, live unit values and active states
+  - requested fan setpoints can be read from:
+    - `fan_power_req`
+    - `fan_power_req_sup`
+    - `fan_power_req_eta`
+  - live fan factors can be read from:
+    - `fan_sup_factor`
+    - `fan_eta_factor`
 - `ui_diagram_data`
   - returns live diagram values such as:
     - `bypass_estim`
