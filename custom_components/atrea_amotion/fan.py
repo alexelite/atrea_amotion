@@ -87,11 +87,27 @@ class AtreaAMotionFan(FanEntity):
         """Write updated state to Home Assistant."""
         self.schedule_update_ha_state()
 
+    @staticmethod
+    def _coerce_percentage(value: Any) -> int | None:
+        """Convert supported percentage values to int."""
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, str):
+            try:
+                return int(float(value))
+            except ValueError:
+                return None
+        return None
+
     @property
     def percentage(self) -> int | None:
         """Return the requested percentage."""
-        value = self.coordinator.value(self.request_key)
-        return int(value) if value is not None else None
+        value = self.coordinator.value(f"stored_{self.request_key}")
+        if value is None:
+            value = self.coordinator.value(self.request_key)
+        return self._coerce_percentage(value)
 
     @property
     def speed_count(self) -> int:
@@ -111,6 +127,9 @@ class AtreaAMotionFan(FanEntity):
         factor = self.coordinator.unit_value(self.factor_key)
         if factor is not None and self.request_key != "fan_power_req":
             attributes["actual_factor"] = round(factor, 1) if isinstance(factor, float) else factor
+        stored_value = self.coordinator.value(f"stored_{self.request_key}")
+        if stored_value is not None:
+            attributes["stored_percentage"] = self._coerce_percentage(stored_value)
         return attributes
 
     async def async_set_percentage(self, percentage: int) -> None:
