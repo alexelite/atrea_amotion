@@ -231,6 +231,7 @@ class AtreaAMotionClimate(ClimateEntity):
         damper_open = self.coordinator.value("damper_io_state")
         damper_percent = None if damper_open is None else (100 if damper_open else 0)
         return {
+            "unit_name": self.coordinator.async_state().discovery.get("name"),
             "work_regime": self.coordinator.requested_value("work_regime"),
             "stored_work_regime": self.coordinator.value("stored_work_regime"),
             "stored_fan_power_req": self.coordinator.value("stored_fan_power_req"),

@@ -32,6 +32,7 @@ class _MockCoordinator:
     update_signal = "atrea_update"
 
     def __init__(self) -> None:
+        self.discovery = {"name": "Homer HRV"}
         self.requests = {
             "work_regime": "AUTO",
             "temp_request": 21.0,
@@ -64,6 +65,13 @@ class _MockCoordinator:
 
     def async_capabilities(self):
         return _MockCapabilities()
+
+    def async_state(self):
+        class _State:
+            def __init__(self, discovery):
+                self.discovery = discovery
+
+        return _State(self.discovery)
 
     def requested_value(self, key: str):
         return self.requests.get(key)
@@ -129,6 +137,7 @@ async def test_climate_uses_exact_unit_presets(hass, MockConfigEntry) -> None:
     }
 
     attrs = climate.extra_state_attributes
+    assert attrs["unit_name"] == "Homer HRV"
     assert attrs["outside_air_temperature"] == 7.5
     assert attrs["extract_air_temperature"] == 21.2
     assert attrs["supply_air_temperature"] == 18.4
