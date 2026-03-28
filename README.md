@@ -4,6 +4,12 @@ Home Assistant custom integration for Atrea HRV and ERV units equipped with the 
 
 The integration uses local websocket communication and is designed around the reality that aMotion is not just a thermostat-style device. Depending on the unit capabilities, it can expose ventilation control, comfort control, bypass control, and telemetry.
 
+## Dashboard Card
+
+A dedicated Lovelace card for this integration is available here:
+
+- `https://github.com/alexelite/atrea-amotion-card`
+
 ## Current Direction
 
 The integration is being refactored to be capability-driven.
