@@ -25,7 +25,7 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import Throttle
 
-from .const import CONF_DEBUG_LOGGING, DOMAIN, LOGGER
+from .const import API_TIMEOUT, CONF_DEBUG_LOGGING, DOMAIN, LOGGER
 
 MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=15)
 PERIODIC_REFRESH_INTERVAL = 15
