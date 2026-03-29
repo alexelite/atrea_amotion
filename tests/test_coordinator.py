@@ -62,3 +62,72 @@ def test_motor_role_mapping_is_ambiguous_when_counters_match(hass) -> None:
     )
 
     assert coordinator.value("motor_role_mapping") == "ambiguous"
+
+
+async def test_async_control_reauthenticates_after_unauthorized(hass) -> None:
+    """Control writes should retry once after websocket authorization expires."""
+    coordinator = AtreaAMotionCoordinator(
+        hass=hass,
+        name="Atrea",
+        host="192.0.2.10",
+        username="user",
+        password="pass",
+        model="aMotion",
+        version="1.0.0",
+    )
+
+    sent_requests: list[tuple[str, object]] = []
+    reauth_calls = 0
+    control_attempts = 0
+
+    async def fake_async_request(endpoint: str, args: object = None) -> bool:
+        sent_requests.append((endpoint, args))
+        return True
+
+    async def fake_async_request_message(endpoint: str, args: object = None, timeout: float = 10):
+        nonlocal control_attempts
+        assert endpoint == "control"
+        control_attempts += 1
+        if control_attempts == 1:
+            return {"id": 1, "code": "UNAUTHORIZED", "response": None, "type": "response"}
+        return {"id": 2, "code": "OK", "response": "OK", "type": "response"}
+
+    async def fake_reauthorize() -> bool:
+        nonlocal reauth_calls
+        reauth_calls += 1
+        return True
+
+    coordinator.async_request = fake_async_request  # type: ignore[method-assign]
+    coordinator._async_request_message = fake_async_request_message  # type: ignore[method-assign]
+    coordinator._async_reauthorize_session = fake_reauthorize  # type: ignore[method-assign]
+
+    assert await coordinator.async_control({"work_regime": "OFF"}) is True
+    assert control_attempts == 2
+    assert reauth_calls == 1
+    assert coordinator.requested_value("work_regime") == "OFF"
+    assert ("control_panel", None) in sent_requests
+    assert ("ui_info", None) in sent_requests
+
+
+async def test_async_request_message_times_out_when_response_never_arrives(hass) -> None:
+    """Tracked request waiters should be cleaned up after timeouts."""
+    coordinator = AtreaAMotionCoordinator(
+        hass=hass,
+        name="Atrea",
+        host="192.0.2.10",
+        username="user",
+        password="pass",
+        model="aMotion",
+        version="1.0.0",
+    )
+
+    async def fake_publish_wss(payload):
+        return True
+
+    coordinator.publish_wss = fake_publish_wss  # type: ignore[method-assign]
+
+    response = await coordinator._async_request_message("control", {"variables": {}}, timeout=0.01)
+
+    assert response is None
+    assert coordinator._response_waiters == {}
+    assert coordinator._pending_requests == {}

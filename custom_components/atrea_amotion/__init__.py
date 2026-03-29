@@ -200,6 +200,7 @@ class AtreaAMotionCoordinator:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._lock = asyncio.Lock()
         self._pending_requests: dict[int, str] = {}
+        self._response_waiters: dict[int, asyncio.Future[dict[str, Any]]] = {}
         self._last_message_at = monotonic()
 
         self.capabilities = AtreaCapabilities()
@@ -290,21 +291,65 @@ class AtreaAMotionCoordinator:
 
     async def async_request(self, endpoint: str, args: Any = None) -> bool:
         """Send a websocket request."""
+        message_id, success = await self._async_send_request(endpoint, args)
+        if not success:
+            self._pending_requests.pop(message_id, None)
+        return success
+
+    async def _async_request_message(
+        self, endpoint: str, args: Any = None, timeout: float = API_TIMEOUT
+    ) -> dict[str, Any] | None:
+        """Send a websocket request and await its direct response."""
+        message_id, success = await self._async_send_request(endpoint, args, expect_response=True)
+        if not success:
+            self._pending_requests.pop(message_id, None)
+            self._response_waiters.pop(message_id, None)
+            return None
+
+        waiter = self._response_waiters[message_id]
+        try:
+            return await asyncio.wait_for(waiter, timeout=timeout)
+        except TimeoutError:
+            LOGGER.warning("Timed out waiting for %s response", endpoint)
+            self._pending_requests.pop(message_id, None)
+            return None
+        finally:
+            self._response_waiters.pop(message_id, None)
+
+    async def _async_send_request(
+        self, endpoint: str, args: Any = None, expect_response: bool = False
+    ) -> tuple[int, bool]:
+        """Allocate an id, enqueue response tracking, and publish the request."""
         async with self._lock:
             self._msg_id += 1
-            payload = {"endpoint": endpoint, "id": self._msg_id, "args": args}
-            self._pending_requests[self._msg_id] = endpoint
-            return await self.publish_wss(payload)
+            message_id = self._msg_id
+            payload = {"endpoint": endpoint, "id": message_id, "args": args}
+            self._pending_requests[message_id] = endpoint
+            if expect_response:
+                self._response_waiters[message_id] = asyncio.get_running_loop().create_future()
+            success = await self.publish_wss(payload)
+        return message_id, success
 
     async def async_control(self, variables: dict[str, Any]) -> bool:
         """Send control variables to the unit."""
-        success = await self.async_request("control", {"variables": variables})
-        if success:
-            self._apply_optimistic_control(variables)
-            await self.async_request("control_panel")
-            await self.async_request("ui_info")
-            self._schedule_control_burst_refresh()
-        return success
+        response = await self._async_request_message("control", {"variables": variables})
+        if response is not None and response.get("code") == "UNAUTHORIZED":
+            LOGGER.warning("Control rejected as unauthorized, reauthorizing websocket session")
+            if not await self._async_reauthorize_session():
+                return False
+            response = await self._async_request_message("control", {"variables": variables})
+
+        if response is None:
+            return False
+        if response.get("code") != "OK":
+            LOGGER.warning("Control request failed with code %s", response.get("code"))
+            return False
+
+        self._apply_optimistic_control(variables)
+        await self.async_request("control_panel")
+        await self.async_request("ui_info")
+        self._schedule_control_burst_refresh()
+        return True
 
     async def async_reset_filter_interval(self) -> bool:
         """Confirm filter replacement on the unit."""
@@ -451,6 +496,29 @@ class AtreaAMotionCoordinator:
             }
         )
 
+    async def _async_reauthorize_session(self) -> bool:
+        """Refresh websocket authorization after an unauthorized control reply."""
+        self._authorized = False
+        self._ready.clear()
+
+        await self.authenticate_with_server()
+        try:
+            await asyncio.wait_for(self._ready.wait(), timeout=5)
+            return True
+        except TimeoutError:
+            LOGGER.debug("Token reauthorization timed out, requesting a fresh websocket token")
+
+        self._authorized = False
+        self._ready.clear()
+        self._token = None
+        await self.authenticate_with_server()
+        try:
+            await asyncio.wait_for(self._ready.wait(), timeout=5)
+            return True
+        except TimeoutError:
+            LOGGER.warning("Websocket reauthorization failed")
+            return False
+
     def on_error(self, ws, error) -> None:
         """Socket error event."""
         details = f"(details: {error})" if error else ""
@@ -494,19 +562,33 @@ class AtreaAMotionCoordinator:
 
     def _handle_message_on_loop(self, message: dict[str, Any]) -> None:
         """Handle websocket messages on the HA event loop."""
-        if message.get("id") == self._login_msg_id and message.get("code") == "OK":
+        message_id = message.get("id")
+        if message_id == self._login_msg_id and message.get("code") == "OK":
             self._token = message.get("response")
+            self._resolve_response_waiter(message)
             asyncio.create_task(self.authenticate_with_server())
             return
 
-        if message.get("id") == self._token_msg_id:
+        if message_id == self._token_msg_id:
             self._authorized = message.get("code") == "OK"
             if self._authorized:
                 self._login_retry = 0
                 self._ready.set()
+            self._resolve_response_waiter(message)
             return
 
+        self._resolve_response_waiter(message)
         self._process_message(message)
+
+    def _resolve_response_waiter(self, message: dict[str, Any]) -> None:
+        """Resolve any waiter blocked on a direct websocket response."""
+        message_id = message.get("id")
+        if not isinstance(message_id, int):
+            return
+
+        waiter = self._response_waiters.get(message_id)
+        if waiter is not None and not waiter.done():
+            waiter.set_result(message)
 
     def _process_message(self, message: dict[str, Any]) -> None:
         """Parse websocket responses and events."""
