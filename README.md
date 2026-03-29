@@ -7,8 +7,13 @@ The integration uses local websocket communication and is designed around the re
 ## Dashboard Card
 
 A dedicated Lovelace card for this integration is available here:
+[alexelite/atrea-amotion-card](https://github.com/alexelite/atrea-amotion-card)
 
-- `https://github.com/alexelite/atrea-amotion-card`
+### Preview
+
+<p align="center">
+  <img src="images/main.png" width="400">
+</p>
 
 ## Current Direction
 
