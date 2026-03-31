@@ -26,6 +26,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import Throttle
 
 from .const import API_TIMEOUT, CONF_DEBUG_LOGGING, DOMAIN, LOGGER
+from .state_messages import hass_language, translate_state_message, translation_key_for
 
 MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=15)
 PERIODIC_REFRESH_INTERVAL = 15
@@ -828,6 +829,13 @@ class AtreaAMotionCoordinator:
         stored = self.state.control_panel.get("stored", {})
         modbus = self.state.modbus
         update = self.state.update
+        notifications = self._build_active_notifications(active_states)
+        warning_notifications = [item for item in notifications if item["kind"] == "warning"]
+        fault_notifications = [item for item in notifications if item["kind"] == "fault"]
+        highest_severity = max(
+            (item["severity"] for item in notifications if isinstance(item.get("severity"), int)),
+            default=None,
+        )
 
         self.state.derived = {
             "bypass_estim": diagram.get("bypass_estim"),
@@ -855,22 +863,16 @@ class AtreaAMotionCoordinator:
                 for state in active_states.values()
                 if isinstance(state, dict) and state.get("name")
             ],
-            "warning": any(
-                (
-                    self.capabilities.base_states.get(int(state_id), {}).get("purpose") in {"warning", "notify"}
-                    or self.capabilities.base_states.get(int(state_id), {}).get("severity") in {3, 4}
-                )
-                for state_id, state in active_states.items()
-                if isinstance(state, dict) and state.get("active") and str(state_id).isdigit()
-            ),
-            "fault": any(
-                (
-                    str(self.capabilities.base_states.get(int(state_id), {}).get("purpose", "")).startswith("alarm")
-                    or (self.capabilities.base_states.get(int(state_id), {}).get("severity") or 0) >= 5
-                )
-                for state_id, state in active_states.items()
-                if isinstance(state, dict) and state.get("active") and str(state_id).isdigit()
-            ),
+            "notifications": notifications,
+            "notification_count": len(notifications),
+            "warning_count": len(warning_notifications),
+            "fault_count": len(fault_notifications),
+            "has_warning": bool(warning_notifications),
+            "has_fault": bool(fault_notifications),
+            "highest_severity": highest_severity,
+            "primary_message": notifications[0]["full_message"] if notifications else None,
+            "warning": bool(warning_notifications),
+            "fault": bool(fault_notifications),
             "filter_interval_active": any(
                 isinstance(state, dict) and state.get("name") == "FILTER_INTERVAL"
                 for state in active_states.values()
@@ -891,6 +893,81 @@ class AtreaAMotionCoordinator:
             "update_check_enabled": update.get("check"),
             "update_status": update.get("status"),
         }
+
+    def _build_active_notifications(self, active_states: dict[str, Any]) -> list[dict[str, Any]]:
+        """Normalize raw active states into UI-ready notifications."""
+        notifications: list[dict[str, Any]] = []
+        language = hass_language(self.hass)
+
+        for state_id, state in active_states.items():
+            if not isinstance(state, dict) or not state.get("active"):
+                continue
+
+            base_state = self.capabilities.base_states.get(int(state_id), {}) if str(state_id).isdigit() else {}
+            code = self._state_code_for(base_state, state)
+            purpose = self._state_purpose_for(base_state)
+            severity = self._state_severity_for(base_state)
+            kind = self._state_kind(purpose, severity)
+            prefix = "E" if kind == "fault" else "S"
+            message = translate_state_message(language, code) or code or f"State {state_id}"
+            message_code = f"{prefix} {state_id}" if str(state_id) else prefix
+
+            notifications.append(
+                {
+                    "id": int(state_id) if str(state_id).isdigit() else state_id,
+                    "code": code,
+                    "purpose": purpose,
+                    "severity": severity,
+                    "kind": kind,
+                    "prefix": prefix,
+                    "translation_key": translation_key_for(code),
+                    "message": message,
+                    "message_code": message_code,
+                    "full_message": f"{message_code} - {message}" if message else message_code,
+                    "active": True,
+                }
+            )
+
+        return sorted(
+            notifications,
+            key=lambda item: (
+                0 if item["kind"] == "fault" else 1,
+                -(item["severity"] or 0),
+                int(item["id"]) if isinstance(item["id"], int) else 999999,
+                item["code"] or "",
+            ),
+        )
+
+    @staticmethod
+    def _state_code_for(base_state: dict[str, Any], state: dict[str, Any]) -> str | None:
+        """Resolve the semantic websocket state code."""
+        for key in ("type", "name"):
+            value = base_state.get(key)
+            if isinstance(value, str) and value:
+                return value
+        value = state.get("name")
+        return value if isinstance(value, str) and value else None
+
+    @staticmethod
+    def _state_purpose_for(base_state: dict[str, Any]) -> str | None:
+        """Resolve the UI purpose for a base state."""
+        value = base_state.get("purpose")
+        return value if isinstance(value, str) and value else None
+
+    @staticmethod
+    def _state_severity_for(base_state: dict[str, Any]) -> int | None:
+        """Resolve the numeric severity for a base state."""
+        value = base_state.get("severity")
+        return value if isinstance(value, int) else None
+
+    @staticmethod
+    def _state_kind(purpose: str | None, severity: int | None) -> str:
+        """Collapse Atrea purposes into card-friendly kinds."""
+        if isinstance(purpose, str) and purpose.startswith("alarm"):
+            return "fault"
+        if isinstance(severity, int) and severity >= 5:
+            return "fault"
+        return "warning"
 
     def _notify_state_changed(self) -> None:
         """Broadcast updated state."""

@@ -64,6 +64,48 @@ def test_motor_role_mapping_is_ambiguous_when_counters_match(hass) -> None:
     assert coordinator.value("motor_role_mapping") == "ambiguous"
 
 
+def test_active_notifications_are_normalized_for_cards(hass) -> None:
+    """Coordinator should flatten active states into localized card notifications."""
+    coordinator = AtreaAMotionCoordinator(
+        hass=hass,
+        name="Atrea",
+        host="192.0.2.10",
+        username="user",
+        password="pass",
+        model="aMotion",
+        version="1.0.0",
+    )
+
+    coordinator.capabilities.base_states = {
+        105: {"id": 105, "purpose": "notify", "severity": 3, "type": "FILTER_INTERVAL"},
+        999: {"id": 999, "purpose": "alarm_sr", "severity": 5, "type": "HEATER_FAULT_HEATER_1"},
+    }
+
+    coordinator._apply_ui_info(
+        {
+            "requests": {},
+            "unit": {},
+            "states": {
+                "active": {
+                    "105": {"active": True, "name": "FILTER_INTERVAL"},
+                    "999": {"active": True, "name": "HEATER_FAULT_HEATER_1"},
+                }
+            },
+        }
+    )
+
+    notifications = coordinator.value("notifications")
+
+    assert notifications[0]["message_code"] == "E 999"
+    assert notifications[0]["message"] == "Failure of heater A"
+    assert notifications[1]["message_code"] == "S 105"
+    assert notifications[1]["full_message"] == "S 105 - Filter replacement interval"
+    assert coordinator.value("warning_count") == 1
+    assert coordinator.value("fault_count") == 1
+    assert coordinator.value("has_warning") is True
+    assert coordinator.value("has_fault") is True
+
+
 async def test_async_control_reauthenticates_after_unauthorized(hass) -> None:
     """Control writes should retry once after websocket authorization expires."""
     coordinator = AtreaAMotionCoordinator(

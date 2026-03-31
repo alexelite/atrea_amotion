@@ -26,6 +26,28 @@ class _MockCoordinator:
     def value(self, key: str):
         if key == "last_filter_reset":
             return {"day": 21, "month": 3, "year": 2026}
+        if key == "notification_count":
+            return 1
+        if key == "notifications":
+            return [
+                {
+                    "id": 105,
+                    "code": "FILTER_INTERVAL",
+                    "kind": "warning",
+                    "message": "Filter replacement interval",
+                    "full_message": "S 105 - Filter replacement interval",
+                }
+            ]
+        if key == "warning_count":
+            return 1
+        if key == "fault_count":
+            return 0
+        if key == "primary_message":
+            return "S 105 - Filter replacement interval"
+        if key == "has_warning":
+            return True
+        if key == "has_fault":
+            return False
         return None
 
 
@@ -99,3 +121,31 @@ async def test_requested_fan_speed_sensors_follow_capabilities(hass, MockConfigE
     assert "fan_requested" not in entity_by_key
     assert entity_by_key["fan_sup_requested"].native_value == 97
     assert entity_by_key["fan_eta_requested"].native_value == 50
+
+
+async def test_active_notifications_sensor_exposes_card_payload(hass, MockConfigEntry) -> None:
+    """Active notifications sensor should expose normalized message payload."""
+    coordinator = _MockCoordinator()
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Atrea",
+        data={CONF_NAME: "Atrea", CONF_HOST: "192.0.2.10"},
+    )
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = {"atrea": coordinator}
+
+    added_entities = []
+
+    def _async_add_entities(entities):
+        added_entities.extend(entities)
+
+    await async_setup_entry(hass, entry, _async_add_entities)
+
+    sensor = next(entity for entity in added_entities if entity.entity_description.key == "active_notifications")
+    attrs = sensor.extra_state_attributes
+
+    assert sensor.native_value == 1
+    assert attrs["warning_count"] == 1
+    assert attrs["fault_count"] == 0
+    assert attrs["primary_message"] == "S 105 - Filter replacement interval"
+    assert attrs["notifications"][0]["code"] == "FILTER_INTERVAL"

@@ -15,6 +15,9 @@ Useful websocket endpoints confirmed from captured startup traffic:
   - live fan factors can be read from:
     - `fan_sup_factor`
     - `fan_eta_factor`
+- `ui_diagram_scheme`
+  - returns supplemental UI metadata
+  - includes `baseStates`, which classify active-state ids by `purpose`, `severity`, and often a semantic `type`
 - `ui_diagram_data`
   - returns live diagram values such as:
     - `bypass_estim`
@@ -85,5 +88,32 @@ Behavior notes:
 - `control_panel.stored` may show pending values before `ui_info.requests` catches up.
 - the integration also flattens `control_panel.stored` into internal `stored_*` values plus
   `control_panel_visible` and `control_panel_remaining`
+- the integration now also normalizes `ui_info.states.active` into a card-ready notification list:
+  - source id/state = `ui_info.states.active`
+  - source metadata = `ui_diagram_scheme.baseStates`
+  - source text = `custom_components/atrea_amotion/translations/en.json` under `state_messages`
+  - formatted message example = `S 105 - Filter replacement interval`
+- normalized notification fields currently include:
+  - `id`
+  - `code`
+  - `purpose`
+  - `severity`
+  - `kind`
+  - `prefix`
+  - `translation_key`
+  - `message`
+  - `message_code`
+  - `full_message`
+  - `active`
+- aggregate notification fields currently include:
+  - `notifications`
+  - `notification_count`
+  - `warning_count`
+  - `fault_count`
+  - `highest_severity`
+  - `primary_message`
+  - `has_warning`
+  - `has_fault`
+- these aggregates are exposed for UI consumers on the `climate` entity attributes and on the `active_notifications` sensor attributes
 - `modbus` and `update` are stable readback endpoints after `modbus/set` and `update/set`
 - `mode_current` can move through transient states like `STARTUP` before settling on `NORMAL`.

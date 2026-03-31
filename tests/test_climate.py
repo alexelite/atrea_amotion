@@ -48,6 +48,27 @@ class _MockCoordinator:
             "bypass_estim": 42,
             "damper_io_state": True,
             "filter_due_date": {"day": 25, "month": 3, "year": 2026},
+            "notifications": [
+                {
+                    "id": 105,
+                    "code": "FILTER_INTERVAL",
+                    "purpose": "notify",
+                    "severity": 3,
+                    "kind": "warning",
+                    "prefix": "S",
+                    "translation_key": "state_messages.FILTER_INTERVAL",
+                    "message": "Filter replacement interval",
+                    "message_code": "S 105",
+                    "full_message": "S 105 - Filter replacement interval",
+                    "active": True,
+                }
+            ],
+            "warning_count": 1,
+            "fault_count": 0,
+            "highest_severity": 3,
+            "primary_message": "S 105 - Filter replacement interval",
+            "has_warning": True,
+            "has_fault": False,
             "warning": True,
             "fault": False,
         }
@@ -149,5 +170,9 @@ async def test_climate_uses_exact_unit_presets(hass, MockConfigEntry) -> None:
     assert attrs["eta_damper_percent"] == 100
     assert attrs["current_mode"] == "NORMAL"
     assert attrs["filter_days_remaining"] is not None
+    assert attrs["warning_count"] == 1
+    assert attrs["fault_count"] == 0
+    assert attrs["primary_message"] == "S 105 - Filter replacement interval"
+    assert attrs["notifications"][0]["message"] == "Filter replacement interval"
     assert attrs["warning"] is True
     assert attrs["fault"] is False

@@ -220,6 +220,13 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
         value_key="active_state_count",
     ),
     AtreaSensorDescription(
+        key="active_notifications",
+        translation_key="active_notifications",
+        icon="mdi:message-alert-outline",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="notification_count",
+    ),
+    AtreaSensorDescription(
         key="filter_interval_active",
         name="Filter interval active",
         icon="mdi:air-filter",
@@ -401,6 +408,16 @@ class AtreaAMotionSensor(SensorEntity):
             return {
                 "active_state_names": self.coordinator.value("active_state_names") or [],
                 "active_states": self.coordinator.value("active_states") or {},
+            }
+        if self.entity_description.key == "active_notifications":
+            return {
+                "notifications": self.coordinator.value("notifications") or [],
+                "warning_count": self.coordinator.value("warning_count") or 0,
+                "fault_count": self.coordinator.value("fault_count") or 0,
+                "highest_severity": self.coordinator.value("highest_severity"),
+                "primary_message": self.coordinator.value("primary_message"),
+                "has_warning": self.coordinator.value("has_warning") or False,
+                "has_fault": self.coordinator.value("has_fault") or False,
             }
         if self.entity_description.key in {"m1_register", "m2_register"}:
             return {"raw_seconds": self.coordinator.value(self.entity_description.value_key)}

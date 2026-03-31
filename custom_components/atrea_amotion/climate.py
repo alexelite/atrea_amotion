@@ -253,6 +253,13 @@ class AtreaAMotionClimate(ClimateEntity):
             "eta_damper_percent": damper_percent,
             "current_mode": self.coordinator.unit_value("mode_current"),
             "filter_days_remaining": filter_days_remaining,
+            "notifications": self.coordinator.value("notifications") or [],
+            "warning_count": self.coordinator.value("warning_count") or 0,
+            "fault_count": self.coordinator.value("fault_count") or 0,
+            "highest_severity": self.coordinator.value("highest_severity"),
+            "primary_message": self.coordinator.value("primary_message"),
+            "has_warning": self.coordinator.value("has_warning"),
+            "has_fault": self.coordinator.value("has_fault"),
             "warning": self.coordinator.value("warning"),
             "fault": self.coordinator.value("fault"),
         }

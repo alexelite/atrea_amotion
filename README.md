@@ -78,6 +78,8 @@ The current implementation focuses on:
 - fan setpoint sensors for requested supply / extract speed, plus actual fan factor telemetry
 - bypass/runtime sensors such as `bypass_estim`, `damper_io_state`, and fan operating hours
 - filter/service sensors such as next filter check, last filter replacement, days remaining, and maintenance registers
+- localized active-state notifications derived from websocket `states.active` plus `baseStates`
+- a card-ready notification payload exposed on the `climate` entity attributes and the `active_notifications` sensor
 - a button action to confirm filter replacement and reset the filter interval on the unit
 - switch actions to enable or disable Modbus TCP and firmware auto update
 - a maintenance button to request a unit reboot
@@ -100,6 +102,50 @@ Working protocol and entity-model notes are kept here:
 - `docs/ENTITY_STRATEGY.md`
 
 These files are meant to be the reference for future changes so the integration stays coherent as more capabilities and unit variants are added.
+
+## Localized Notifications
+
+The integration now treats websocket active states as a first-class UI model instead of exposing only raw booleans.
+
+Observed pipeline:
+
+```text
+ui_info.states.active
+        +
+ui_diagram_scheme.baseStates
+        +
+translations/en.json state_messages
+        ↓
+normalized notifications payload
+```
+
+The coordinator builds a stable per-message structure with fields such as:
+
+- `id`
+- `code`
+- `purpose`
+- `severity`
+- `kind`
+- `prefix`
+- `message`
+- `message_code`
+- `full_message`
+
+This normalized payload is exposed in two places:
+
+- `climate` attributes:
+  - `notifications`
+  - `warning_count`
+  - `fault_count`
+  - `highest_severity`
+  - `primary_message`
+  - `has_warning`
+  - `has_fault`
+- `sensor.active_notifications`:
+  - state = normalized notification count
+  - attributes = same aggregate payload as above
+
+The dedicated Lovelace card is expected to consume that normalized payload directly and only fall back to generic `warning` / `fault` flags when paired with an older integration build.
 
 ## Attribution
 

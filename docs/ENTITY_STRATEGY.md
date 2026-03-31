@@ -75,6 +75,55 @@ Use sensors for:
 
 Keep requested values and measured values distinct.
 
+### Active-State Notification Modeling
+
+Do not leave websocket active states as a raw backend-only structure when a UI consumer needs human-readable alerts.
+
+Current strategy:
+
+- the integration is the source of truth for active-state message construction
+- `ui_info.states.active` provides the currently active ids and semantic names
+- `ui_diagram_scheme.baseStates` provides classification metadata such as `purpose`, `severity`, and `type`
+- translation text is stored in Home Assistant-friendly JSON under `custom_components/atrea_amotion/translations/en.json`
+- the coordinator normalizes all of that into a stable notification payload
+
+Notification payload fields:
+
+- `id`
+- `code`
+- `purpose`
+- `severity`
+- `kind`
+- `prefix`
+- `translation_key`
+- `message`
+- `message_code`
+- `full_message`
+- `active`
+
+Aggregate notification fields:
+
+- `notifications`
+- `notification_count`
+- `warning_count`
+- `fault_count`
+- `highest_severity`
+- `primary_message`
+- `has_warning`
+- `has_fault`
+
+Entity exposure rules:
+
+- `climate` should expose the aggregate notification payload as attributes because the dedicated card already reads the climate entity first
+- `sensor.active_notifications` should expose the same payload for diagnostics, templates, and dashboards that do not want to depend on the climate entity
+- keep legacy `warning` and `fault` booleans for backward compatibility
+
+Card contract rules:
+
+- the dedicated Lovelace card should consume the normalized payload from the integration
+- the card should not ship its own websocket-state translation table
+- if the payload is missing, the card may fall back to legacy `warning` / `fault` booleans with generic text
+
 ## Capability-Driven Creation
 
 Entity creation must be based on runtime capability discovery.
