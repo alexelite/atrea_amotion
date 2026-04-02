@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import getpass
 import socket
 import struct
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
-from functools import partial
 from ipaddress import IPv4Address
 from typing import Any
 
-import requests
+import msgpack
 
-from .const import API_TIMEOUT, LOGGER
+from .const import LOGGER
 
 try:
     import psutil
@@ -26,24 +26,9 @@ try:
 except ImportError:  # pragma: no cover - not available on every platform
     fcntl = None
 
-DISCOVERY_PORT = 3210
+DISCOVERY_PORT = 8210
 DISCOVERY_TIMEOUT = 2.0
-DISCOVERY_REQUEST = bytes.fromhex("41 44 44 54 00 01 00 06 FF FF FF FF FF FF")
-DISCOVERY_MAGIC = b"ADDT"
-
-TLV_TYPE_MAC = 1
-TLV_TYPE_IP = 2
-TLV_TYPE_MASK = 3
-TLV_TYPE_GATEWAY = 11
-TLV_TYPE_DHCP = 16
-KNOWN_TLV_TYPES = {
-    0,
-    TLV_TYPE_MAC,
-    TLV_TYPE_IP,
-    TLV_TYPE_MASK,
-    TLV_TYPE_GATEWAY,
-    TLV_TYPE_DHCP,
-}
+DISCOVERY_REQUIRED_FIELDS = {"board_number", "name", "type", "version"}
 
 SIOCGIFADDR = 0x8915
 SIOCGIFNETMASK = 0x891B
@@ -207,14 +192,19 @@ def _enumerate_ipv4_targets_ioctl() -> list[_InterfaceTarget]:
     return targets
 
 
-def _decode_mac(value: bytes) -> str:
-    """Decode MAC bytes."""
-    return ":".join(f"{octet:02x}" for octet in value)
+def _is_valid_discovery_payload(payload: dict[str, Any]) -> bool:
+    """Return whether a decoded payload looks like a unit discovery response."""
+    return bool(DISCOVERY_REQUIRED_FIELDS.intersection(payload))
 
 
-def _decode_ipv4(value: bytes) -> str:
-    """Decode IPv4 bytes."""
-    return ".".join(str(octet) for octet in value)
+def _build_discovery_request(interface_name: str) -> bytes:
+    """Build the MessagePack discovery request for one interface."""
+    payload = {
+        "pc": socket.gethostname(),
+        "user": getpass.getuser(),
+        "target": interface_name,
+    }
+    return msgpack.packb(payload, use_bin_type=True)
 
 
 def parse_discovery_response(
@@ -222,59 +212,38 @@ def parse_discovery_response(
     source: tuple[str, int],
     seen: float | None = None,
 ) -> dict[str, Any] | None:
-    """Parse one UDP discovery response packet."""
-    if len(payload) < 8:
+    """Parse one MessagePack UDP discovery response packet."""
+    try:
+        decoded = msgpack.unpackb(payload, raw=False, strict_map_key=False)
+    except (msgpack.ExtraData, msgpack.FormatError, msgpack.StackError, ValueError):
         return None
-    if payload[0:4] != DISCOVERY_MAGIC or payload[4] != 0 or payload[5] != 2:
+    if not isinstance(decoded, dict) or not _is_valid_discovery_payload(decoded):
         return None
 
     device: dict[str, Any] = {
         "raw": payload,
         "seen": seen if seen is not None else time.time(),
-        "mac": None,
-        "ip": None,
-        "mask": None,
-        "gateway": None,
-        "dhcp": None,
         "source_ip": source[0],
         "source_port": source[1],
     }
-
-    offset = 8
-    while offset + 2 <= len(payload):
-        tlv_type = payload[offset]
-        tlv_length = payload[offset + 1]
-        offset += 2
-        next_offset = offset + tlv_length
-        if next_offset > len(payload):
-            break
-        value = payload[offset:next_offset]
-        offset = next_offset
-
-        if tlv_type not in KNOWN_TLV_TYPES:
-            break
-        if tlv_type == 0:
-            continue
-        if tlv_type == TLV_TYPE_MAC:
-            device["mac"] = _decode_mac(value)
-        elif tlv_type == TLV_TYPE_IP:
-            device["ip"] = _decode_ipv4(value)
-        elif tlv_type == TLV_TYPE_MASK:
-            device["mask"] = _decode_ipv4(value)
-        elif tlv_type == TLV_TYPE_GATEWAY:
-            device["gateway"] = _decode_ipv4(value)
-        elif tlv_type == TLV_TYPE_DHCP:
-            device["dhcp"] = bool(value and value[0] > 0)
-
+    device.update(decoded)
+    device["board_number"] = normalize_mac(device.get("board_number")) or device.get("board_number")
+    device["mac"] = device.get("board_number")
+    device["ip"] = source[0]
     return device
 
 
 def _deduplicate_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Deduplicate responses by MAC with IP fallback."""
+    """Deduplicate responses by board number with IP fallback."""
     deduplicated: dict[str, dict[str, Any]] = {}
 
     for device in devices:
-        key = normalize_mac(device.get("mac")) or device.get("ip") or device.get("source_ip")
+        key = (
+            normalize_mac(device.get("board_number"))
+            or normalize_mac(device.get("mac"))
+            or device.get("ip")
+            or device.get("source_ip")
+        )
         if key is None:
             continue
 
@@ -284,11 +253,19 @@ def _deduplicate_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
 
         for field in (
+            "activation_status",
+            "board_number",
+            "board_type",
+            "brand",
             "mac",
             "ip",
-            "mask",
-            "gateway",
-            "dhcp",
+            "name",
+            "type",
+            "version",
+            "production_number",
+            "service_name",
+            "localisation",
+            "target",
             "source_ip",
             "source_port",
         ):
@@ -312,7 +289,6 @@ async def async_discover_devices(
     loop = asyncio.get_running_loop()
     targets = _enumerate_ipv4_targets()
     if not targets:
-        LOGGER.debug("No non-loopback IPv4 interfaces available for UDP discovery")
         return []
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -326,6 +302,7 @@ async def async_discover_devices(
     try:
         sent_targets: set[str] = set()
         for target in targets:
+            payload = _build_discovery_request(target.name)
             LOGGER.debug(
                 "Atrea UDP discovery broadcast target=%s interface=%s ip=%s mask=%s",
                 target.broadcast,
@@ -336,12 +313,12 @@ async def async_discover_devices(
             if target.broadcast in sent_targets:
                 continue
             sent_targets.add(target.broadcast)
-            transport.sendto(DISCOVERY_REQUEST, (target.broadcast, DISCOVERY_PORT))
+            transport.sendto(payload, (target.broadcast, DISCOVERY_PORT))
             LOGGER.debug(
                 "Atrea UDP discovery request sent target=%s:%s raw=%s",
                 target.broadcast,
                 DISCOVERY_PORT,
-                DISCOVERY_REQUEST.hex(" "),
+                payload.hex(" "),
             )
 
         await asyncio.sleep(timeout)
@@ -367,63 +344,12 @@ async def async_discover_devices(
     return deduplicated
 
 
-def _fetch_http_discovery(host: str) -> dict[str, Any] | None:
-    """Fetch HTTP discovery metadata from one unit."""
-    try:
-        response = requests.get(f"http://{host}/api/discovery", timeout=API_TIMEOUT)
-        response.raise_for_status()
-    except requests.RequestException as err:
-        LOGGER.debug("HTTP discovery failed for %s: %s", host, err)
-        return None
-
-    try:
-        payload = response.json()
-    except ValueError:
-        LOGGER.debug("HTTP discovery returned invalid JSON for %s", host)
-        return None
-
-    result = payload.get("result")
-    return result if isinstance(result, dict) else None
-
-
-async def async_enrich_devices(
-    hass,
-    devices: list[dict[str, Any]],
-) -> list[dict[str, Any]]:
-    """Augment UDP discovery devices with HTTP discovery metadata."""
-    async def _enrich(device: dict[str, Any]) -> dict[str, Any]:
-        host = device.get("ip") or device.get("source_ip")
-        metadata = None
-        if host:
-            metadata = await hass.async_add_executor_job(partial(_fetch_http_discovery, host))
-
-        enriched = dict(device)
-        if metadata:
-            enriched["unit_name"] = metadata.get("name")
-            enriched["model"] = metadata.get("type")
-            enriched["version"] = metadata.get("version")
-            enriched["production_number"] = metadata.get("production_number")
-            enriched["board_number"] = metadata.get("board_number")
-        else:
-            enriched["unit_name"] = None
-            enriched["model"] = None
-            enriched["version"] = None
-            enriched["production_number"] = None
-            enriched["board_number"] = None
-        return enriched
-
-    return await asyncio.gather(*(_enrich(device) for device in devices))
-
-
 async def async_discover_enriched_devices(
     hass,
     timeout: float = DISCOVERY_TIMEOUT,
 ) -> list[dict[str, Any]]:
-    """Run UDP discovery and augment each result with HTTP metadata."""
-    devices = await async_discover_devices(timeout=timeout)
-    if not devices:
-        return []
-    return await async_enrich_devices(hass, devices)
+    """Run UDP discovery and return the MessagePack metadata."""
+    return await async_discover_devices(timeout=timeout)
 
 
 def _device_match_score(entry_data: Mapping[str, Any], device: Mapping[str, Any]) -> int:
@@ -431,7 +357,7 @@ def _device_match_score(entry_data: Mapping[str, Any], device: Mapping[str, Any]
     score = 0
 
     entry_network_mac = normalize_mac(entry_data.get("network_mac"))
-    device_network_mac = normalize_mac(device.get("mac"))
+    device_network_mac = normalize_mac(device.get("board_number") or device.get("mac"))
     if entry_network_mac and device_network_mac and entry_network_mac == device_network_mac:
         score += 100
 

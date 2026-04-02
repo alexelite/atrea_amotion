@@ -193,8 +193,20 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 errors["base"] = error or "unknown"
 
+        description_placeholders: dict[str, str] | None = None
+        if not self._discovered_devices:
+            description_placeholders = {
+                "discovery_hint": (
+                    "No devices were discovered on the local network. "
+                    "Enter the unit IP or hostname manually to continue."
+                )
+            }
+
         return self.async_show_form(
-            step_id="user", data_schema=self._async_user_schema(user_input), errors=errors
+            step_id="user",
+            data_schema=self._async_user_schema(user_input),
+            errors=errors,
+            description_placeholders=description_placeholders,
         )
 
 

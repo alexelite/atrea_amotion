@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import msgpack
+
 from custom_components.atrea_amotion.discovery import (
     _enumerate_ipv4_targets,
     async_rediscover_config_entry,
@@ -11,29 +13,33 @@ from custom_components.atrea_amotion.discovery import (
 
 
 def test_parse_discovery_response_decodes_known_tlvs() -> None:
-    """TLV response should decode MAC/IP/mask/gateway/dhcp."""
-    payload = bytes.fromhex(
-        "41 44 44 54 00 02 00 00"
-        " 01 06 aa bb cc dd ee ff"
-        " 02 04 c0 a8 01 32"
-        " 03 04 ff ff ff 00"
-        " 0b 04 c0 a8 01 01"
-        " 10 01 01"
+    """MessagePack response should decode discovery metadata."""
+    payload = msgpack.packb(
+        {
+            "activation_status": "READY",
+            "board_number": "70:b8:f6:44:50:89",
+            "name": "Atrea HRV",
+            "type": "DUPLEX 370 EC5",
+            "version": "aMCE-v2.4.5",
+            "production_number": "123456789",
+        },
+        use_bin_type=True,
     )
 
     parsed = parse_discovery_response(payload, ("192.168.1.50", 3210), seen=123.0)
 
-    assert parsed == {
-        "raw": payload,
-        "seen": 123.0,
-        "mac": "aa:bb:cc:dd:ee:ff",
-        "ip": "192.168.1.50",
-        "mask": "255.255.255.0",
-        "gateway": "192.168.1.1",
-        "dhcp": True,
-        "source_ip": "192.168.1.50",
-        "source_port": 3210,
-    }
+    assert parsed is not None
+    assert parsed["raw"] == payload
+    assert parsed["seen"] == 123.0
+    assert parsed["board_number"] == "70:b8:f6:44:50:89"
+    assert parsed["mac"] == "70:b8:f6:44:50:89"
+    assert parsed["ip"] == "192.168.1.50"
+    assert parsed["name"] == "Atrea HRV"
+    assert parsed["type"] == "DUPLEX 370 EC5"
+    assert parsed["version"] == "aMCE-v2.4.5"
+    assert parsed["production_number"] == "123456789"
+    assert parsed["source_ip"] == "192.168.1.50"
+    assert parsed["source_port"] == 3210
 
 
 def test_normalize_mac_handles_delimiters() -> None:
@@ -60,7 +66,7 @@ async def test_async_rediscover_config_entry_matches_best_device(hass, monkeypat
             "mac": "aa:bb:cc:dd:ee:ff",
             "board_number": "BOARD-1",
             "production_number": "PN-1",
-            "unit_name": "Homer HRV",
+            "unit_name": "Atrea HRV",
             "model": "aMotion",
             "version": "2.0.0",
         },
@@ -81,7 +87,7 @@ async def test_async_rediscover_config_entry_matches_best_device(hass, monkeypat
             "network_mac": "AA-BB-CC-DD-EE-FF",
             "board_number": "BOARD-1",
             "production_number": "PN-1",
-            "unit_name": "Homer HRV",
+            "unit_name": "Atrea HRV",
         },
     )
 

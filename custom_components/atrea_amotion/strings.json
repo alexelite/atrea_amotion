@@ -2,6 +2,7 @@
   "config": {
     "step": {
       "user": {
+        "description": "{discovery_hint}",
         "data": {
           "device_id": "Discovered unit",
           "name": "[%key:common::config_flow::data::name%]",
