@@ -18,6 +18,7 @@ TO_REDACT = {
     "board_number",
     "production_number",
     "mac",
+    "network_mac",
 }
 
 

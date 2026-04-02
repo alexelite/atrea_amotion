@@ -1,4 +1,45 @@
 {
+  "config": {
+    "step": {
+      "user": {
+        "data": {
+          "device_id": "Discovered unit",
+          "name": "Name",
+          "host": "Host",
+          "password": "Password",
+          "username": "Username"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect",
+      "device_required": "Select a discovered unit",
+      "invalid_auth": "Invalid authentication",
+      "invalid_user": "Invalid user",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "Device is already configured"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "device_id": "Discovered unit",
+          "host": "Host",
+          "password": "Password",
+          "username": "Username",
+          "debug_logging": "Enable debug logging"
+        }
+      }
+    },
+    "error": {
+      "already_configured": "Device is already configured",
+      "cannot_connect": "Failed to connect",
+      "invalid_auth": "Invalid authentication"
+    }
+  },
   "entity": {
     "sensor": {
       "active_notifications": {

@@ -26,6 +26,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import Throttle
 
 from .const import API_TIMEOUT, CONF_DEBUG_LOGGING, DOMAIN, LOGGER
+from .discovery import async_rediscover_config_entry
 from .state_messages import hass_language, translate_state_message, translation_key_for
 
 MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=15)
@@ -112,18 +113,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the integration from a config entry."""
     try:
         _apply_logger_options(entry)
-        atrea = AtreaAMotionCoordinator(
-            hass=hass,
-            name=entry.data[CONF_NAME],
-            host=entry.data[CONF_HOST],
-            username=entry.data[CONF_USERNAME],
-            password=entry.data[CONF_PASSWORD],
-            model=entry.data.get("model", "aMotion"),
-            version=entry.data.get("version", "unknown"),
-        )
+        atrea = await _async_build_coordinator(hass, entry.data)
         await atrea.async_initialize()
     except Exception as err:
-        raise ConfigEntryNotReady from err
+        rediscovered = await async_rediscover_config_entry(hass, entry.data)
+        if rediscovered is None:
+            raise ConfigEntryNotReady from err
+
+        updated_data = dict(entry.data)
+        updated_data[CONF_HOST] = rediscovered.get("ip") or rediscovered.get("source_ip")
+        updated_data["network_mac"] = rediscovered.get("mac") or updated_data.get("network_mac")
+        updated_data["unit_name"] = rediscovered.get("unit_name") or updated_data.get("unit_name")
+        updated_data["model"] = rediscovered.get("model") or updated_data.get("model")
+        updated_data["version"] = rediscovered.get("version") or updated_data.get("version")
+        updated_data["production_number"] = (
+            rediscovered.get("production_number") or updated_data.get("production_number")
+        )
+        updated_data["board_number"] = (
+            rediscovered.get("board_number") or updated_data.get("board_number")
+        )
+        updated_data["mac"] = updated_data.get("board_number") or updated_data.get("mac")
+        hass.config_entries.async_update_entry(
+            entry,
+            data=updated_data,
+            title=updated_data.get("unit_name") or updated_data[CONF_HOST],
+        )
+
+        try:
+            atrea = await _async_build_coordinator(hass, updated_data)
+            await atrea.async_initialize()
+        except Exception as rediscovery_err:
+            raise ConfigEntryNotReady from rediscovery_err
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
@@ -158,6 +178,22 @@ def _apply_logger_options(entry: ConfigEntry) -> None:
         entry.data.get(CONF_DEBUG_LOGGING, False),
     )
     LOGGER.setLevel(logging.DEBUG if debug_enabled else logging.NOTSET)
+
+
+async def _async_build_coordinator(
+    hass: HomeAssistant,
+    entry_data: dict[str, Any],
+) -> "AtreaAMotionCoordinator":
+    """Create a coordinator from config entry data."""
+    return AtreaAMotionCoordinator(
+        hass=hass,
+        name=entry_data[CONF_NAME],
+        host=entry_data[CONF_HOST],
+        username=entry_data[CONF_USERNAME],
+        password=entry_data[CONF_PASSWORD],
+        model=entry_data.get("model", "aMotion"),
+        version=entry_data.get("version", "unknown"),
+    )
 
 
 class AtreaAMotionCoordinator:

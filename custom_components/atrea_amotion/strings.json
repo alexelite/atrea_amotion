@@ -3,6 +3,7 @@
     "step": {
       "user": {
         "data": {
+          "device_id": "Discovered unit",
           "name": "[%key:common::config_flow::data::name%]",
           "host": "[%key:common::config_flow::data::host%]",
           "password": "[%key:common::config_flow::data::password%]",
@@ -12,6 +13,7 @@
     },
     "error": {
       "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "device_required": "Select a discovered unit",
       "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
       "invalid_user": "Invalid user",
       "unknown": "[%key:common::config_flow::error::unknown%]"
@@ -24,6 +26,7 @@
     "step": {
       "init": {
         "data": {
+          "device_id": "Discovered unit",
           "host": "[%key:common::config_flow::data::host%]",
           "password": "[%key:common::config_flow::data::password%]",
           "username": "[%key:common::config_flow::data::username%]",

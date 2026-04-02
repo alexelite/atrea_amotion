@@ -57,6 +57,7 @@ async def test_diagnostics_redacts_sensitive_values(hass, MockConfigEntry) -> No
             "username": "user",
             "password": "pass",
             "mac": "secret-mac",
+            "network_mac": "aa:bb:cc:dd:ee:ff",
             CONF_DEBUG_LOGGING: True,
         },
         options={CONF_DEBUG_LOGGING: True},
@@ -70,5 +71,6 @@ async def test_diagnostics_redacts_sensitive_values(hass, MockConfigEntry) -> No
     assert diagnostics["entry"]["data"]["username"] == "**REDACTED**"
     assert diagnostics["entry"]["data"]["password"] == "**REDACTED**"
     assert diagnostics["entry"]["data"]["mac"] == "**REDACTED**"
+    assert diagnostics["entry"]["data"]["network_mac"] == "**REDACTED**"
     assert diagnostics["state"]["discovery"]["board_number"] == "**REDACTED**"
     assert diagnostics["runtime"]["authorized"] is True
