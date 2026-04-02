@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import socket
+import struct
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -19,6 +20,11 @@ try:
     import psutil
 except ImportError:  # pragma: no cover - Home Assistant normally provides this
     psutil = None
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - not available on every platform
+    fcntl = None
 
 DISCOVERY_PORT = 3210
 DISCOVERY_TIMEOUT = 2.0
@@ -38,6 +44,9 @@ KNOWN_TLV_TYPES = {
     TLV_TYPE_GATEWAY,
     TLV_TYPE_DHCP,
 }
+
+SIOCGIFADDR = 0x8915
+SIOCGIFNETMASK = 0x891B
 
 
 @dataclass(slots=True)
@@ -108,10 +117,20 @@ def _compute_broadcast(address: str, netmask: str) -> str | None:
 
 def _enumerate_ipv4_targets() -> list[_InterfaceTarget]:
     """Enumerate IPv4 broadcast targets on non-loopback interfaces."""
-    if psutil is None:
-        LOGGER.debug("psutil is unavailable; UDP discovery cannot enumerate interfaces")
-        return []
+    if psutil is not None:
+        targets = _enumerate_ipv4_targets_psutil()
+        if targets:
+            return targets
+        LOGGER.debug("psutil did not return usable IPv4 targets, falling back to ioctl enumeration")
 
+    targets = _enumerate_ipv4_targets_ioctl()
+    if not targets:
+        LOGGER.debug("No non-loopback IPv4 interfaces available for UDP discovery")
+    return targets
+
+
+def _enumerate_ipv4_targets_psutil() -> list[_InterfaceTarget]:
+    """Enumerate IPv4 targets via psutil when available."""
     targets: list[_InterfaceTarget] = []
     for interface_name, addresses in psutil.net_if_addrs().items():
         for address in addresses:
@@ -138,7 +157,53 @@ def _enumerate_ipv4_targets() -> list[_InterfaceTarget]:
                     broadcast=broadcast,
                 )
             )
+    return targets
 
+
+def _ioctl_ipv4_value(sock: socket.socket, interface_name: str, command: int) -> str | None:
+    """Read one IPv4 interface value via ioctl."""
+    if fcntl is None:
+        return None
+
+    try:
+        request = struct.pack("256s", interface_name[:15].encode("utf-8"))
+        result = fcntl.ioctl(sock.fileno(), command, request)
+    except OSError:
+        return None
+    return socket.inet_ntoa(result[20:24])
+
+
+def _enumerate_ipv4_targets_ioctl() -> list[_InterfaceTarget]:
+    """Enumerate IPv4 targets using only the standard library."""
+    if fcntl is None or not hasattr(socket, "if_nameindex"):
+        return []
+
+    targets: list[_InterfaceTarget] = []
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        for _, interface_name in socket.if_nameindex():
+            address = _ioctl_ipv4_value(sock, interface_name, SIOCGIFADDR)
+            netmask = _ioctl_ipv4_value(sock, interface_name, SIOCGIFNETMASK)
+            if not address or not netmask:
+                continue
+            try:
+                ip_address = IPv4Address(address)
+            except ValueError:
+                continue
+            if ip_address.is_loopback:
+                continue
+
+            broadcast = _compute_broadcast(address, netmask)
+            if broadcast is None:
+                continue
+
+            targets.append(
+                _InterfaceTarget(
+                    name=interface_name,
+                    address=address,
+                    netmask=netmask,
+                    broadcast=broadcast,
+                )
+            )
     return targets
 
 
@@ -297,7 +362,9 @@ async def async_discover_devices(
         LOGGER.debug("Atrea UDP discovery parsed response=%s", parsed)
         parsed_devices.append(parsed)
 
-    return _deduplicate_devices(parsed_devices)
+    deduplicated = _deduplicate_devices(parsed_devices)
+    LOGGER.debug("Atrea UDP discovery completed devices_found=%s", len(deduplicated))
+    return deduplicated
 
 
 def _fetch_http_discovery(host: str) -> dict[str, Any] | None:
