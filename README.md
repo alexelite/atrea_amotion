@@ -54,12 +54,13 @@ For units like the currently tested Elementary aM-CE board, the intended entity 
 
 ## Configuration
 
-The config flow currently asks for:
+Before setting up the integration, make sure the unit has a local user account configured. The integration requires local username/password authentication and cannot access the unit without a local user.
 
-- name
-- host
-- username
-- password
+The integration can automatically discover compatible units on your local network during setup.
+
+If a unit is found, it will be shown in the config flow so you can select it and enter only the login details. Units that are already configured in Home Assistant are marked in the list.
+
+If nothing is discovered, you can still continue by entering the host manually. The integration can also help recover from IP address changes by recognizing the same unit again when possible.
 
 The integration connects directly to the unit over the local network.
 

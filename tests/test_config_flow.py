@@ -73,6 +73,48 @@ async def test_user_flow_creates_entry_from_discovered_device(hass: HomeAssistan
     assert result["data"]["network_mac"] == "aa:bb:cc:dd:ee:ff"
 
 
+async def test_user_flow_marks_already_configured_discovered_device(
+    hass: HomeAssistant, MockConfigEntry
+) -> None:
+    """Discovered devices already in HA should be labelled in the selector."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        unique_id="BOARD-1",
+        title="Existing unit",
+        data={
+            CONF_NAME: "Existing unit",
+            CONF_HOST: "192.0.2.10",
+            CONF_USERNAME: "user",
+            CONF_PASSWORD: "pass",
+            "board_number": "BOARD-1",
+            "production_number": "PN-1",
+            "network_mac": "aa:bb:cc:dd:ee:ff",
+        },
+    )
+    entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.atrea_amotion.config_flow.async_discover_enriched_devices",
+        AsyncMock(
+            return_value=[
+                {
+                    "ip": "192.0.2.10",
+                    "source_ip": "192.0.2.10",
+                    "mac": "aa:bb:cc:dd:ee:ff",
+                    "unit_name": "Homer HRV",
+                    "production_number": "PN-1",
+                    "board_number": "BOARD-1",
+                }
+            ]
+        ),
+    ):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": "user"})
+
+    assert result["type"] is FlowResultType.FORM
+    options = next(iter(result["data_schema"].schema.values())).container
+    assert "Already configured" in options["BOARD-1"]
+
+
 async def test_options_flow_exposes_debug_toggle(
     hass: HomeAssistant, MockConfigEntry
 ) -> None:

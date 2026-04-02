@@ -120,14 +120,51 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             parts.append(f"SN {device['production_number']}")
         return " | ".join(parts)
 
+    def _known_device_keys(self) -> set[str]:
+        """Collect identifiers for already configured units."""
+        known: set[str] = set()
+        for entry in self._async_current_entries():
+            for key in (
+                entry.unique_id,
+                entry.data.get("board_number"),
+                entry.data.get("production_number"),
+                entry.data.get("network_mac"),
+                entry.data.get("mac"),
+                entry.data.get(CONF_HOST),
+            ):
+                if key:
+                    known.add(str(key).strip().casefold())
+        return known
+
+    def _device_is_already_configured(self, device: dict[str, Any]) -> bool:
+        """Return whether a discovered device matches an existing entry."""
+        known = self._known_device_keys()
+        for key in (
+            device.get("board_number"),
+            device.get("production_number"),
+            device.get("mac"),
+            device.get("ip"),
+            device.get("source_ip"),
+        ):
+            if key and str(key).strip().casefold() in known:
+                return True
+        return False
+
+    def _device_display_options(self) -> dict[str, str]:
+        """Build select options for discovered devices."""
+        options: dict[str, str] = {}
+        for device_id, device in self._discovered_devices.items():
+            label = self._device_label(device)
+            if self._device_is_already_configured(device):
+                label = f"{label} | Already configured"
+            options[device_id] = label
+        return options
+
     def _async_user_schema(self, user_input: dict[str, Any] | None = None) -> vol.Schema:
         """Build the user step schema."""
         user_input = user_input or {}
         if self._discovered_devices:
-            options = {
-                device_id: self._device_label(device)
-                for device_id, device in self._discovered_devices.items()
-            }
+            options = self._device_display_options()
             default_device_id = user_input.get(CONF_DEVICE_ID) or next(iter(options))
             default_name = user_input.get(CONF_NAME) or (
                 self._discovered_devices[default_device_id].get("unit_name") or DEFAULT_NAME
@@ -193,7 +230,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 errors["base"] = error or "unknown"
 
-        description_placeholders: dict[str, str] | None = None
+        description_placeholders: dict[str, str] | None = {"discovery_hint": ""}
         if not self._discovered_devices:
             description_placeholders = {
                 "discovery_hint": (
@@ -242,10 +279,7 @@ class AtreaOptionsFlowHandler(config_entries.OptionsFlow):
         fields: dict[Any, Any] = {}
         if self._discovered_devices:
             options = {MANUAL_DEVICE_ID: "Manual host"}
-            options.update({
-                device_id: ConfigFlow._device_label(device)
-                for device_id, device in self._discovered_devices.items()
-            })
+            options.update(self._device_display_options())
             current_host = user_input.get(CONF_HOST, self.config_entry.data.get(CONF_HOST))
             default_device = next(
                 (
