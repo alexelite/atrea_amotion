@@ -34,6 +34,33 @@ def test_ui_diagram_data_nested_payload_is_unwrapped(hass) -> None:
     assert coordinator.value("fan_sup_operating_time") == 12602
 
 
+def test_user_config_is_stored_and_available_for_entities(hass) -> None:
+    """Persistent config values should be read from user_config_get."""
+    coordinator = AtreaAMotionCoordinator(
+        hass=hass,
+        name="Atrea",
+        host="192.0.2.10",
+        username="user",
+        password="pass",
+        model="aMotion",
+        version="1.0.0",
+    )
+
+    coordinator._apply_user_config(
+        {
+            "variables": {
+                "season_request": "AUTO_TODA",
+                "season_switch_temp": 18.5,
+                "temp_oda_mean_interval": "HOURS_3",
+            }
+        }
+    )
+
+    assert coordinator.config_value("season_request") == "AUTO_TODA"
+    assert coordinator.value("season_switch_temp") == 18.5
+    assert coordinator.value("temp_oda_mean_interval") == "HOURS_3"
+
+
 def test_motor_role_mapping_is_ambiguous_when_counters_match(hass) -> None:
     """Matching motor and fan counters should be reported as ambiguous."""
     coordinator = AtreaAMotionCoordinator(
@@ -173,3 +200,63 @@ async def test_async_request_message_times_out_when_response_never_arrives(hass)
     assert response is None
     assert coordinator._response_waiters == {}
     assert coordinator._pending_requests == {}
+
+
+async def test_async_set_config_refreshes_readback_and_confirms_applied(hass) -> None:
+    """Config writes should be confirmed via user_config_get."""
+    coordinator = AtreaAMotionCoordinator(
+        hass=hass,
+        name="Atrea",
+        host="192.0.2.10",
+        username="user",
+        password="pass",
+        model="aMotion",
+        version="1.0.0",
+    )
+
+    config_reads = 0
+
+    async def fake_async_request(endpoint: str, args: object = None) -> bool:
+        nonlocal config_reads
+        if endpoint == "user_config_get":
+            config_reads += 1
+            coordinator._apply_user_config({"variables": {"temp_oda_mean_interval": "HOURS_1"}})
+        return True
+
+    async def fake_async_request_message(endpoint: str, args: object = None, timeout: float = 10):
+        assert endpoint == "config"
+        return {"id": 1, "code": "OK", "response": "OK", "type": "response"}
+
+    coordinator.async_request = fake_async_request  # type: ignore[method-assign]
+    coordinator._async_request_message = fake_async_request_message  # type: ignore[method-assign]
+
+    assert await coordinator.async_set_config("temp_oda_mean_interval", "HOURS_1") is True
+    assert config_reads == 1
+
+
+def test_config_variables_for_write_groups_auto_season_settings(hass) -> None:
+    """Season-related config writes should include coupled values in auto modes."""
+    coordinator = AtreaAMotionCoordinator(
+        hass=hass,
+        name="Atrea",
+        host="192.0.2.10",
+        username="user",
+        password="pass",
+        model="aMotion",
+        version="1.0.0",
+    )
+
+    coordinator.state.config = {
+        "season_request": "AUTO_TODA",
+        "season_switch_temp": 18.0,
+        "temp_oda_mean_interval": "HOURS_3",
+    }
+
+    assert coordinator._config_variables_for_write("temp_oda_mean_interval", "HOURS_1") == {
+        "season_request": "AUTO_TODA",
+        "season_switch_temp": 18.0,
+        "temp_oda_mean_interval": "HOURS_1",
+    }
+    assert coordinator._config_variables_for_write("season_request", "HEATING") == {
+        "season_request": "HEATING"
+    }

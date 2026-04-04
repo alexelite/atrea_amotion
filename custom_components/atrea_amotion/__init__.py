@@ -44,6 +44,7 @@ PLATFORMS = [
     Platform.BUTTON,
     Platform.CLIMATE,
     Platform.FAN,
+    Platform.NUMBER,
     Platform.SELECT,
     Platform.SENSOR,
     Platform.SWITCH,
@@ -56,6 +57,7 @@ class AtreaCapabilities:
     """Capabilities derived from the unit control scheme."""
 
     requests: set[str] = field(default_factory=set)
+    config_fields: set[str] = field(default_factory=set)
     unit_fields: set[str] = field(default_factory=set)
     state_fields: set[str] = field(default_factory=set)
     enum_values: dict[str, list[str]] = field(default_factory=dict)
@@ -98,6 +100,7 @@ class AtreaState:
 
     discovery: dict[str, Any] = field(default_factory=dict)
     requests: dict[str, Any] = field(default_factory=dict)
+    config: dict[str, Any] = field(default_factory=dict)
     unit: dict[str, Any] = field(default_factory=dict)
     active_states: dict[str, Any] = field(default_factory=dict)
     derived: dict[str, Any] = field(default_factory=dict)
@@ -227,6 +230,7 @@ class AtreaAMotionCoordinator:
         self._discovery_ready = asyncio.Event()
         self._control_scheme_ready = asyncio.Event()
         self._ui_info_ready = asyncio.Event()
+        self._user_config_ready = asyncio.Event()
         self._diagram_ready = asyncio.Event()
         self._moments_ready = asyncio.Event()
         self._shutdown = False
@@ -267,6 +271,7 @@ class AtreaAMotionCoordinator:
 
         await self.async_request("discovery")
         await self.async_request("ui_control_scheme")
+        await self.async_request("user_config_get")
         await self.async_request("ui_diagram_scheme")
         await self.async_request("ui_info")
         await self.async_request("ui_diagram_data")
@@ -277,6 +282,7 @@ class AtreaAMotionCoordinator:
         await asyncio.wait_for(self._discovery_ready.wait(), timeout=10)
         await asyncio.wait_for(self._control_scheme_ready.wait(), timeout=10)
         await asyncio.wait_for(self._ui_info_ready.wait(), timeout=10)
+        await asyncio.wait_for(self._user_config_ready.wait(), timeout=10)
         await asyncio.wait_for(self._diagram_ready.wait(), timeout=10)
         await asyncio.wait_for(self._moments_ready.wait(), timeout=10)
         self._ensure_refresh_task()
@@ -305,6 +311,10 @@ class AtreaAMotionCoordinator:
         """Return a requested value."""
         return self.state.requests.get(key)
 
+    def config_value(self, key: str) -> Any:
+        """Return a configuration value."""
+        return self.state.config.get(key)
+
     def unit_value(self, key: str) -> Any:
         """Return a measured unit value."""
         return self.state.unit.get(key)
@@ -315,6 +325,8 @@ class AtreaAMotionCoordinator:
             return self.state.derived.get(key)
         if key in self.state.unit:
             return self.state.unit.get(key)
+        if key in self.state.config:
+            return self.state.config.get(key)
         if key in self.state.requests:
             return self.state.requests.get(key)
         return self.state.control_panel.get(key)
@@ -323,6 +335,7 @@ class AtreaAMotionCoordinator:
     async def async_update(self) -> None:
         """Refresh the current unit state."""
         await self.async_request("ui_info")
+        await self.async_request("user_config_get")
         await self.async_request("ui_diagram_data")
         await self.async_request("control_admin/config/moments/get")
 
@@ -420,6 +433,24 @@ class AtreaAMotionCoordinator:
         if success:
             await self.async_request("update")
         return success
+
+    async def async_set_config(self, key: str, value: Any) -> bool:
+        """Set a persistent unit configuration value and confirm via readback."""
+        variables = self._config_variables_for_write(key, value)
+        response = await self._async_request_message("config", {"variables": variables})
+
+        if response is not None and response.get("code") == "UNAUTHORIZED":
+            LOGGER.warning("Config write rejected as unauthorized, reauthorizing websocket session")
+            if not await self._async_reauthorize_session():
+                return False
+            response = await self._async_request_message("config", {"variables": variables})
+
+        if response is not None and response.get("code") != "OK":
+            LOGGER.warning("Config request failed with code %s", response.get("code"))
+            return False
+
+        await self.async_request("user_config_get")
+        return self.state.config.get(key) == value
 
     async def async_reboot(self) -> bool:
         """Request a unit reboot."""
@@ -653,6 +684,8 @@ class AtreaAMotionCoordinator:
                 self._apply_discovery(response)
             elif endpoint == "ui_control_scheme":
                 self._apply_control_scheme(response)
+            elif endpoint == "user_config_get":
+                self._apply_user_config(response)
             elif endpoint == "ui_diagram_scheme":
                 self._apply_diagram_scheme(response)
             elif endpoint == "ui_info":
@@ -684,6 +717,8 @@ class AtreaAMotionCoordinator:
             return "discovery"
         if {"requests", "types", "unit"}.issubset(response):
             return "ui_control_scheme"
+        if set(response) == {"variables"}:
+            return "user_config_get"
         if "diagramType" in response or "components" in response:
             return "ui_diagram_scheme"
         if {"requests", "unit", "states"}.issubset(response):
@@ -722,6 +757,7 @@ class AtreaAMotionCoordinator:
     def _apply_control_scheme(self, response: dict[str, Any]) -> None:
         """Store capabilities from ui_control_scheme."""
         self.capabilities.requests = set(response.get("requests", []))
+        self.capabilities.config_fields = set(response.get("config", []))
         self.capabilities.unit_fields = set(response.get("unit", []))
         self.capabilities.state_fields = set(response.get("states", []))
         self.capabilities.enum_values = {
@@ -745,6 +781,14 @@ class AtreaAMotionCoordinator:
             for item in response.get("baseStates", [])
             if isinstance(item, dict) and isinstance(item.get("id"), int)
         }
+        self._notify_state_changed()
+
+    def _apply_user_config(self, response: dict[str, Any]) -> None:
+        """Store persistent user configuration values."""
+        variables = response.get("variables", response)
+        self.state.config = variables if isinstance(variables, dict) else {}
+        self._refresh_derived_state()
+        self._user_config_ready.set()
         self._notify_state_changed()
 
     def _apply_ui_info(self, response: dict[str, Any]) -> None:
@@ -863,6 +907,7 @@ class AtreaAMotionCoordinator:
         filters = moments.get("filters") if isinstance(moments, dict) else None
         last_filter_reset = moments.get("lastFilterReset") if isinstance(moments, dict) else None
         stored = self.state.control_panel.get("stored", {})
+        config = self.state.config
         modbus = self.state.modbus
         update = self.state.update
         notifications = self._build_active_notifications(active_states)
@@ -919,6 +964,12 @@ class AtreaAMotionCoordinator:
             "stored_fan_power_req_sup": stored.get("fan_power_req_sup"),
             "stored_temp_request": stored.get("temp_request"),
             "stored_work_regime": stored.get("work_regime"),
+            "season_request": config.get("season_request"),
+            "season_switch_temp": config.get("season_switch_temp"),
+            "temp_oda_mean_interval": config.get("temp_oda_mean_interval"),
+            "temp_ida_heater_hyst": config.get("temp_ida_heater_hyst"),
+            "temp_ida_cooler_hyst": config.get("temp_ida_cooler_hyst"),
+            "temp_cool_active_offset": config.get("temp_cool_active_offset"),
             "control_panel_visible": self.state.control_panel.get("visible"),
             "control_panel_remaining": self.state.control_panel.get("remaining"),
             "modbus_active": modbus.get("active"),
@@ -928,6 +979,34 @@ class AtreaAMotionCoordinator:
             "autoupdate_enabled": update.get("autoupdate"),
             "update_check_enabled": update.get("check"),
             "update_status": update.get("status"),
+        }
+
+    def _config_variables_for_write(self, key: str, value: Any) -> dict[str, Any]:
+        """Build a config payload, grouping related season settings when needed."""
+        if key not in {
+            "season_request",
+            "season_switch_temp",
+            "temp_oda_mean_interval",
+        }:
+            return {key: value}
+
+        current = dict(self.state.config)
+        current[key] = value
+        season_request = current.get("season_request")
+        if key == "season_request" and value not in {"AUTO_TODA", "AUTO_TODA_RATIO"}:
+            return {"season_request": value}
+        if season_request not in {"AUTO_TODA", "AUTO_TODA_RATIO"}:
+            return {key: value}
+
+        variables: dict[str, Any] = {
+            "season_request": season_request,
+            "season_switch_temp": current.get("season_switch_temp"),
+            "temp_oda_mean_interval": current.get("temp_oda_mean_interval"),
+        }
+        return {
+            name: current_value
+            for name, current_value in variables.items()
+            if current_value is not None
         }
 
     def _build_active_notifications(self, active_states: dict[str, Any]) -> list[dict[str, Any]]:
