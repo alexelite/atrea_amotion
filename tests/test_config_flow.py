@@ -147,6 +147,50 @@ async def test_options_flow_exposes_debug_toggle(
     assert CONF_DEBUG_LOGGING in result["data_schema"].schema
 
 
+async def test_options_flow_loads_with_discovered_devices(
+    hass: HomeAssistant, MockConfigEntry
+) -> None:
+    """Options flow should load when discovery returns devices."""
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Atrea",
+        data={
+            CONF_NAME: "Atrea",
+            CONF_HOST: "192.0.2.10",
+            CONF_USERNAME: "user",
+            CONF_PASSWORD: "pass",
+            CONF_DEBUG_LOGGING: False,
+        },
+        options={},
+    )
+    entry.add_to_hass(hass)
+
+    with patch(
+        "custom_components.atrea_amotion.config_flow.async_discover_enriched_devices",
+        AsyncMock(
+            return_value=[
+                {
+                    "ip": "192.0.2.10",
+                    "source_ip": "192.0.2.10",
+                    "mac": "aa:bb:cc:dd:ee:ff",
+                    "unit_name": "Homer HRV",
+                    "production_number": "PN-1",
+                    "board_number": "BOARD-1",
+                }
+            ]
+        ),
+    ):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "init"
+    assert CONF_DEVICE_ID in result["data_schema"].schema
+    assert CONF_HOST in result["data_schema"].schema
+    assert CONF_USERNAME in result["data_schema"].schema
+    assert CONF_PASSWORD in result["data_schema"].schema
+    assert CONF_DEBUG_LOGGING in result["data_schema"].schema
+
+
 async def test_options_flow_saves_debug_toggle(
     hass: HomeAssistant, MockConfigEntry
 ) -> None:

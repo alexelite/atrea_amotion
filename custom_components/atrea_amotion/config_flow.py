@@ -266,6 +266,13 @@ class AtreaOptionsFlowHandler(config_entries.OptionsFlow):
             }
         return self._discovered_devices
 
+    def _device_display_options(self) -> dict[str, str]:
+        """Build select options for discovered devices."""
+        return {
+            device_id: ConfigFlow._device_label(device)
+            for device_id, device in self._discovered_devices.items()
+        }
+
     def _async_options_schema(self, user_input: dict[str, Any] | None = None) -> vol.Schema:
         """Build the options flow schema."""
         user_input = user_input or {}
