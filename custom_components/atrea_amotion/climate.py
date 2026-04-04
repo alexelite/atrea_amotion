@@ -78,6 +78,22 @@ WORK_REGIME_TO_PRESET = {
 }
 
 
+def _available_presets(available_work_regimes: list[str]) -> list[str]:
+    """Map exposed unit work regimes to climate presets."""
+    modes: list[str] = []
+    if "OFF" in available_work_regimes:
+        modes.append("Stand-by")
+    if "AUTO" in available_work_regimes:
+        modes.append("Intervals")
+    if "VENTILATION" in available_work_regimes:
+        modes.append("Ventilation")
+    if "NIGHT_PRECOOLING" in available_work_regimes:
+        modes.append("Night precooling")
+    if "DISBALANCE" in available_work_regimes:
+        modes.append("Disbalance")
+    return modes
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: Callable
 ) -> None:
@@ -174,18 +190,7 @@ class AtreaAMotionClimate(ClimateEntity):
     def preset_modes(self) -> list[str]:
         """Return exact unit work regimes as presets."""
         available = self.coordinator.async_capabilities().enum_for("work_regime")
-        modes: list[str] = []
-        if "OFF" in available:
-            modes.append("Stand-by")
-        if "AUTO" in available:
-            modes.append("Intervals")
-        if "VENTILATION" in available:
-            modes.append("Ventilation")
-        if "NIGHT_PRECOOLING" in available:
-            modes.append("Night precooling")
-        if "DISBALANCE" in available:
-            modes.append("Disbalance")
-        return modes
+        return _available_presets(available)
 
     @property
     def hvac_action(self) -> HVACAction:
@@ -224,6 +229,7 @@ class AtreaAMotionClimate(ClimateEntity):
     @property
     def extra_state_attributes(self) -> dict[str, object]:
         """Return raw requested/effective modes."""
+        available_work_regimes = self.coordinator.async_capabilities().enum_for("work_regime")
         filter_due_date = _date_from_parts(self.coordinator.value("filter_due_date"))
         filter_days_remaining = (
             (filter_due_date - date.today()).days if filter_due_date is not None else None
@@ -232,6 +238,8 @@ class AtreaAMotionClimate(ClimateEntity):
         damper_percent = None if damper_open is None else (100 if damper_open else 0)
         return {
             "unit_name": self.coordinator.async_state().discovery.get("name"),
+            "available_work_regimes": available_work_regimes,
+            "available_presets": _available_presets(available_work_regimes),
             "work_regime": self.coordinator.requested_value("work_regime"),
             "stored_work_regime": self.coordinator.value("stored_work_regime"),
             "stored_fan_power_req": self.coordinator.value("stored_fan_power_req"),

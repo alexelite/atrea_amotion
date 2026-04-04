@@ -159,6 +159,20 @@ async def test_climate_uses_exact_unit_presets(hass, MockConfigEntry) -> None:
 
     attrs = climate.extra_state_attributes
     assert attrs["unit_name"] == "Homer HRV"
+    assert attrs["available_work_regimes"] == [
+        "OFF",
+        "AUTO",
+        "VENTILATION",
+        "NIGHT_PRECOOLING",
+        "DISBALANCE",
+    ]
+    assert attrs["available_presets"] == [
+        "Stand-by",
+        "Intervals",
+        "Ventilation",
+        "Night precooling",
+        "Disbalance",
+    ]
     assert attrs["outside_air_temperature"] == 7.5
     assert attrs["extract_air_temperature"] == 21.2
     assert attrs["supply_air_temperature"] == 18.4
@@ -176,3 +190,56 @@ async def test_climate_uses_exact_unit_presets(hass, MockConfigEntry) -> None:
     assert attrs["notifications"][0]["message"] == "Filter replacement interval"
     assert attrs["warning"] is True
     assert attrs["fault"] is False
+
+
+async def test_climate_hides_disbalance_when_unit_does_not_expose_it(
+    hass, MockConfigEntry
+) -> None:
+    """Climate should only expose presets reported by the unit."""
+    coordinator = _MockCoordinator()
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Atrea",
+        data={CONF_NAME: "Atrea", CONF_HOST: "192.0.2.10"},
+    )
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = {"atrea": coordinator}
+
+    added_entities = []
+
+    def _async_add_entities(entities):
+        added_entities.extend(entities)
+
+    original_enum_for = coordinator.async_capabilities().enum_for
+
+    def _enum_for_without_disbalance(variable: str) -> list[str]:
+        values = original_enum_for(variable)
+        if variable != "work_regime":
+            return values
+        return [value for value in values if value != "DISBALANCE"]
+
+    coordinator.async_capabilities().enum_for = _enum_for_without_disbalance
+
+    await async_setup_entry(hass, entry, _async_add_entities)
+
+    climate = added_entities[0]
+
+    assert climate.preset_modes == [
+        "Stand-by",
+        "Intervals",
+        "Ventilation",
+        "Night precooling",
+    ]
+    attrs = climate.extra_state_attributes
+    assert attrs["available_work_regimes"] == [
+        "OFF",
+        "AUTO",
+        "VENTILATION",
+        "NIGHT_PRECOOLING",
+    ]
+    assert attrs["available_presets"] == [
+        "Stand-by",
+        "Intervals",
+        "Ventilation",
+        "Night precooling",
+    ]
