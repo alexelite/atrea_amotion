@@ -793,9 +793,10 @@ class AtreaAMotionCoordinator:
 
     def _apply_ui_info(self, response: dict[str, Any]) -> None:
         """Store current unit data."""
-        self.state.requests = response.get("requests", {})
-        self.state.unit = response.get("unit", {})
-        self.state.active_states = response.get("states", {}).get("active", {})
+        self.state.requests = self._as_dict(response.get("requests"))
+        self.state.unit = self._as_dict(response.get("unit"))
+        states = self._as_dict(response.get("states"))
+        self.state.active_states = self._as_dict(states.get("active"))
         self._refresh_derived_state()
         self._ui_info_ready.set()
         self._notify_state_changed()
@@ -812,14 +813,14 @@ class AtreaAMotionCoordinator:
 
     def _apply_moments(self, response: dict[str, Any]) -> None:
         """Store maintenance and filter counters."""
-        self.state.moments = response
+        self.state.moments = self._as_dict(response)
         self._refresh_derived_state()
         self._moments_ready.set()
         self._notify_state_changed()
 
     def _apply_control_panel(self, response: dict[str, Any]) -> None:
         """Store transient control panel values."""
-        self.state.control_panel = response
+        self.state.control_panel = self._as_dict(response)
         self._refresh_derived_state()
 
     def _apply_optimistic_control(self, variables: dict[str, Any]) -> None:
@@ -834,13 +835,13 @@ class AtreaAMotionCoordinator:
 
     def _apply_modbus(self, response: dict[str, Any]) -> None:
         """Store Modbus TCP state."""
-        self.state.modbus = response
+        self.state.modbus = self._as_dict(response)
         self._refresh_derived_state()
         self._notify_state_changed()
 
     def _apply_update(self, response: dict[str, Any]) -> None:
         """Store firmware update settings."""
-        self.state.update = response
+        self.state.update = self._as_dict(response)
         self._refresh_derived_state()
         self._notify_state_changed()
 
@@ -857,6 +858,11 @@ class AtreaAMotionCoordinator:
             except ValueError:
                 return None
         return None
+
+    @staticmethod
+    def _as_dict(value: Any) -> dict[str, Any]:
+        """Return dictionaries as-is and coerce null-like payloads to an empty mapping."""
+        return value if isinstance(value, dict) else {}
 
     def _infer_motor_role_mapping(
         self,
