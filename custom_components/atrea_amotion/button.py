@@ -62,7 +62,7 @@ class AtreaFilterResetButton(ButtonEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Update entity state."""
-        self.async_write_ha_state()
+        self.schedule_update_ha_state()
 
     async def async_press(self) -> None:
         """Confirm filter replacement."""
@@ -106,7 +106,7 @@ class AtreaRebootButton(ButtonEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Update entity state."""
-        self.async_write_ha_state()
+        self.schedule_update_ha_state()
 
     async def async_press(self) -> None:
         """Request reboot."""

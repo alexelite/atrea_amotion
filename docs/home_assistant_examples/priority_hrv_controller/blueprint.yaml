@@ -1,0 +1,290 @@
+blueprint:
+  name: HRV Priority Controller
+  description: >
+    Control a single HRV/ERV unit with explicit mode priority:
+    night cooling > day > standby.
+
+    This blueprint is designed for integrations where:
+    - the main unit is a climate entity
+    - bypass control is exposed as a select entity
+    - daytime control is based on a CO2 sensor
+    - night cooling uses a separate schedule and a fixed fan speed
+  domain: automation
+  input:
+    unit_climate:
+      name: Climate entity
+      description: Climate entity for the HRV/ERV unit.
+      selector:
+        entity:
+          domain: climate
+
+    bypass_select:
+      name: Bypass select entity
+      description: Select entity used to command bypass mode.
+      selector:
+        entity:
+          domain: select
+
+    work_schedule:
+      name: Work schedule
+      description: Schedule that enables daytime CO2 control.
+      selector:
+        entity:
+          domain: schedule
+
+    night_cooling_schedule:
+      name: Night cooling schedule
+      description: >
+        Schedule that enables night cooling. If this schedule overlaps with
+        the work schedule, night cooling has higher priority.
+      selector:
+        entity:
+          domain: schedule
+
+    co2_sensor:
+      name: CO2 sensor
+      description: CO2 sensor used for daytime fan control.
+      selector:
+        entity:
+          domain: sensor
+
+    day_fan_min:
+      name: Day minimum fan speed
+      description: Fan speed used when CO2 is at or below the lower threshold.
+      default: 60
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: box
+
+    day_fan_max:
+      name: Day maximum fan speed
+      description: Fan speed used when CO2 is at or above the upper threshold.
+      default: 80
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: box
+
+    day_co2_low:
+      name: Day lower CO2 threshold
+      description: CO2 value where day fan control starts from the minimum speed.
+      default: 950
+      selector:
+        number:
+          min: 0
+          max: 5000
+          mode: box
+          unit_of_measurement: ppm
+
+    day_co2_high:
+      name: Day upper CO2 threshold
+      description: CO2 value where day fan control reaches the maximum speed.
+      default: 1100
+      selector:
+        number:
+          min: 0
+          max: 5000
+          mode: box
+          unit_of_measurement: ppm
+
+    night_cooling_fan:
+      name: Night cooling fan speed
+      description: Fixed fan speed used while night cooling is active.
+      default: 60
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: box
+
+    day_preset:
+      name: Day preset mode
+      description: Preset mode applied during daytime control.
+      default: Ventilation
+      selector:
+        text:
+
+    standby_preset:
+      name: Standby preset mode
+      description: Preset mode applied when neither day nor night cooling is active.
+      default: "Off"
+      selector:
+        text:
+
+    day_bypass:
+      name: Day bypass option
+      description: Bypass select option used during daytime control.
+      default: Auto
+      selector:
+        select:
+          options:
+            - Auto
+            - Open
+            - Closed
+
+    night_bypass:
+      name: Night cooling bypass option
+      description: Bypass select option used during night cooling.
+      default: Open
+      selector:
+        select:
+          options:
+            - Auto
+            - Open
+            - Closed
+
+    standby_bypass:
+      name: Standby bypass option
+      description: Bypass select option used during standby.
+      default: Auto
+      selector:
+        select:
+          options:
+            - Auto
+            - Open
+            - Closed
+
+    standby_fan:
+      name: Standby fan speed
+      description: Fan speed applied during standby.
+      default: "0"
+      selector:
+        text:
+
+    poll_minutes:
+      name: Periodic reconciliation interval
+      description: >
+        Safety polling interval in minutes. State triggers still apply changes
+        immediately, while this polling run helps self-correct missed commands.
+      default: "/5"
+      selector:
+        text:
+
+mode: single
+
+triggers:
+  - trigger: time_pattern
+    minutes: !input poll_minutes
+  - trigger: state
+    entity_id: !input work_schedule
+  - trigger: state
+    entity_id: !input night_cooling_schedule
+  - trigger: state
+    entity_id: !input co2_sensor
+
+conditions: []
+
+actions:
+  - variables:
+      unit_climate: !input unit_climate
+      bypass_select: !input bypass_select
+      work_schedule: !input work_schedule
+      night_cooling_schedule: !input night_cooling_schedule
+      co2_sensor: !input co2_sensor
+
+      day_fan_min: !input day_fan_min
+      day_fan_max: !input day_fan_max
+      day_co2_low: !input day_co2_low
+      day_co2_high: !input day_co2_high
+      night_cooling_fan: !input night_cooling_fan
+
+      day_preset: !input day_preset
+      standby_preset: !input standby_preset
+
+      day_bypass: !input day_bypass
+      night_bypass: !input night_bypass
+      standby_bypass: !input standby_bypass
+
+      standby_fan: !input standby_fan
+
+      is_night_cooling: "{{ is_state(night_cooling_schedule, 'on') }}"
+      is_work_time: "{{ is_state(work_schedule, 'on') }}"
+      co2: "{{ states(co2_sensor) | float(0) }}"
+
+      active_mode: >-
+        {% if is_night_cooling %}
+          night_cooling
+        {% elif is_work_time %}
+          day
+        {% else %}
+          standby
+        {% endif %}
+
+      target_preset: >-
+        {% if active_mode == 'standby' %}
+          {{ standby_preset }}
+        {% else %}
+          {{ day_preset }}
+        {% endif %}
+
+      target_fan: >-
+        {% if active_mode == 'night_cooling' %}
+          {{ night_cooling_fan }}
+        {% elif active_mode == 'day' %}
+          {% if day_co2_high <= day_co2_low %}
+            {{ day_fan_max }}
+          {% elif co2 <= day_co2_low %}
+            {{ day_fan_min }}
+          {% elif co2 >= day_co2_high %}
+            {{ day_fan_max }}
+          {% else %}
+            {{
+              (
+                day_fan_min
+                + (
+                  (co2 - day_co2_low)
+                  / (day_co2_high - day_co2_low)
+                  * (day_fan_max - day_fan_min)
+                )
+              ) | round(0)
+            }}
+          {% endif %}
+        {% else %}
+          {{ standby_fan }}
+        {% endif %}
+
+      target_bypass: >-
+        {% if active_mode == 'night_cooling' %}
+          {{ night_bypass }}
+        {% elif active_mode == 'day' %}
+          {{ day_bypass }}
+        {% else %}
+          {{ standby_bypass }}
+        {% endif %}
+
+      current_preset: "{{ state_attr(unit_climate, 'preset_mode') | string }}"
+      current_fan: "{{ state_attr(unit_climate, 'fan_mode') | string }}"
+      current_bypass: "{{ states(bypass_select) | string }}"
+
+  - if:
+      - condition: template
+        value_template: "{{ current_preset != (target_preset | string) }}"
+    then:
+      - action: climate.set_preset_mode
+        target:
+          entity_id: !input unit_climate
+        data:
+          preset_mode: "{{ target_preset | string }}"
+
+  - if:
+      - condition: template
+        value_template: "{{ current_bypass != (target_bypass | string) }}"
+    then:
+      - action: select.select_option
+        target:
+          entity_id: !input bypass_select
+        data:
+          option: "{{ target_bypass | string }}"
+
+  - if:
+      - condition: template
+        value_template: "{{ current_fan != (target_fan | string) }}"
+    then:
+      - action: climate.set_fan_mode
+        target:
+          entity_id: !input unit_climate
+        data:
+          fan_mode: "{{ target_fan | string }}"
