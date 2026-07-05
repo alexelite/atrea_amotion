@@ -19,11 +19,8 @@ from .const import DOMAIN
 class AtreaSwitchDescription(SwitchEntityDescription):
     """Description for aMotion switch entities."""
 
-    key: str
-    name: str
-    icon: str
-    value_key: str
-    setter: str
+    value_key: str = ""
+    setter: str = ""
 
 
 ATREA_SWITCHES: tuple[AtreaSwitchDescription, ...] = (
