@@ -81,7 +81,7 @@ class AtreaConfigNumber(NumberEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Update state."""
-        self.schedule_update_ha_state()
+        self.async_write_ha_state()
 
     @property
     def native_value(self) -> float | None:

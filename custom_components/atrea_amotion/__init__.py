@@ -237,6 +237,8 @@ class AtreaAMotionCoordinator:
         self._thread: threading.Thread | None = None
         self._refresh_task: asyncio.Task | None = None
         self._control_burst_task: asyncio.Task | None = None
+        self._dispatch_pending = False
+        self._dispatch_lock = threading.Lock()
         self.ws: websocket.WebSocketApp | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._lock = asyncio.Lock()
@@ -1091,8 +1093,22 @@ class AtreaAMotionCoordinator:
         return "warning"
 
     def _notify_state_changed(self) -> None:
-        """Broadcast updated state."""
-        self.hass.add_job(async_dispatcher_send, self.hass, self.update_signal)
+        """Broadcast updated state, coalescing bursts into one dispatcher tick."""
+        with self._dispatch_lock:
+            if self._dispatch_pending:
+                return
+            self._dispatch_pending = True
+
+        if self._loop is not None:
+            self._loop.call_soon_threadsafe(self._dispatch_state_changed)
+            return
+        self.hass.add_job(self._dispatch_state_changed)
+
+    def _dispatch_state_changed(self) -> None:
+        """Dispatch a single pending state-change notification."""
+        with self._dispatch_lock:
+            self._dispatch_pending = False
+        async_dispatcher_send(self.hass, self.update_signal)
 
     async def publish_wss(self, payload: dict[str, Any]) -> bool:
         """Publish JSON over websocket."""

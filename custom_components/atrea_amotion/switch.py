@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from homeassistant.components.switch import SwitchEntity
+from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_NAME
 from homeassistant.helpers.device_registry import DeviceInfo
@@ -16,7 +16,7 @@ from .const import DOMAIN
 
 
 @dataclass(frozen=True)
-class AtreaSwitchDescription:
+class AtreaSwitchDescription(SwitchEntityDescription):
     """Description for aMotion switch entities."""
 
     key: str
@@ -98,7 +98,7 @@ class AtreaToggleSwitch(SwitchEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Update state."""
-        self.schedule_update_ha_state()
+        self.async_write_ha_state()
 
     @property
     def is_on(self) -> bool:

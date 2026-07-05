@@ -85,7 +85,7 @@ class AtreaAMotionFan(FanEntity):
 
     def _handle_coordinator_update(self) -> None:
         """Write updated state to Home Assistant."""
-        self.schedule_update_ha_state()
+        self.async_write_ha_state()
 
     @staticmethod
     def _coerce_percentage(value: Any) -> int | None:
