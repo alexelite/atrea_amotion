@@ -86,7 +86,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     def async_get_options_flow(config_entry):
         """Return the options flow handler."""
-        return AtreaOptionsFlowHandler(config_entry)
+        return AtreaOptionsFlowHandler()
 
     async def _async_get_discovered_devices(self) -> dict[str, dict[str, Any]]:
         """Load discovered devices once per flow."""
@@ -250,9 +250,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class AtreaOptionsFlowHandler(config_entries.OptionsFlow):
     """Handle Atrea aMotion options."""
 
-    def __init__(self, config_entry) -> None:
+    def __init__(self) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
         self._discovered_devices: dict[str, dict[str, Any]] = {}
 
     async def _async_get_discovered_devices(self) -> dict[str, dict[str, Any]]:
