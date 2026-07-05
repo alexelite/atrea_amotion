@@ -33,6 +33,7 @@ MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=15)
 PERIODIC_REFRESH_INTERVAL = 15
 CONTROL_BURST_REFRESH_INTERVAL = 1
 CONTROL_BURST_REFRESH_CYCLES = 20
+STATE_DISPATCH_DEBOUNCE_SECONDS = 1.0
 
 SOCK_CONNECTED = "Open"
 SOCK_DISCONNECTED = "Close"
@@ -239,6 +240,7 @@ class AtreaAMotionCoordinator:
         self._control_burst_task: asyncio.Task | None = None
         self._dispatch_pending = False
         self._dispatch_lock = threading.Lock()
+        self._dispatch_handle: asyncio.TimerHandle | None = None
         self.ws: websocket.WebSocketApp | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._lock = asyncio.Lock()
@@ -1100,12 +1102,27 @@ class AtreaAMotionCoordinator:
             self._dispatch_pending = True
 
         if self._loop is not None:
-            self._loop.call_soon_threadsafe(self._dispatch_state_changed)
+            self._loop.call_soon_threadsafe(self._schedule_dispatch_on_loop)
             return
         self.hass.add_job(self._dispatch_state_changed)
 
+    def _schedule_dispatch_on_loop(self) -> None:
+        """Debounce bursts of websocket updates before dispatching to entities."""
+        if self._loop is None:
+            self.hass.add_job(self._dispatch_state_changed)
+            return
+
+        if self._dispatch_handle is not None and not self._dispatch_handle.cancelled():
+            return
+
+        self._dispatch_handle = self._loop.call_later(
+            STATE_DISPATCH_DEBOUNCE_SECONDS,
+            self._dispatch_state_changed,
+        )
+
     def _dispatch_state_changed(self) -> None:
         """Dispatch a single pending state-change notification."""
+        self._dispatch_handle = None
         with self._dispatch_lock:
             self._dispatch_pending = False
         async_dispatcher_send(self.hass, self.update_signal)
