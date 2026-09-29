@@ -49,6 +49,12 @@ def load_state_messages(language: str) -> dict[str, str]:
     }
 
 
+def preload_state_messages(language: str | None) -> None:
+    """Warm the message cache for a language (blocking I/O, run in an executor)."""
+    for candidate in language_candidates(language):
+        load_state_messages(candidate)
+
+
 def translate_state_message(language: str | None, code: str | None) -> str | None:
     """Return a localized message for a websocket state code."""
     if not code:
