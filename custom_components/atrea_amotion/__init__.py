@@ -234,6 +234,8 @@ class AtreaAMotionCoordinator:
         self._user_config_ready = asyncio.Event()
         self._diagram_ready = asyncio.Event()
         self._moments_ready = asyncio.Event()
+        self._modbus_ready = asyncio.Event()
+        self._update_ready = asyncio.Event()
         self._shutdown = False
         self._thread: threading.Thread | None = None
         self._refresh_task: asyncio.Task | None = None
@@ -289,6 +291,12 @@ class AtreaAMotionCoordinator:
         await asyncio.wait_for(self._user_config_ready.wait(), timeout=10)
         await asyncio.wait_for(self._diagram_ready.wait(), timeout=10)
         await asyncio.wait_for(self._moments_ready.wait(), timeout=10)
+        # Optional endpoints, but the switch platform needs their values at setup.
+        try:
+            await asyncio.wait_for(self._modbus_ready.wait(), timeout=5)
+            await asyncio.wait_for(self._update_ready.wait(), timeout=5)
+        except TimeoutError:
+            pass
         self._ensure_refresh_task()
 
     async def async_shutdown(self) -> None:
@@ -841,12 +849,14 @@ class AtreaAMotionCoordinator:
         """Store Modbus TCP state."""
         self.state.modbus = self._as_dict(response)
         self._refresh_derived_state()
+        self._modbus_ready.set()
         self._notify_state_changed()
 
     def _apply_update(self, response: dict[str, Any]) -> None:
         """Store firmware update settings."""
         self.state.update = self._as_dict(response)
         self._refresh_derived_state()
+        self._update_ready.set()
         self._notify_state_changed()
 
     @staticmethod
