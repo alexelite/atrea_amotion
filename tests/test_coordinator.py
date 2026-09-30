@@ -211,6 +211,71 @@ async def test_optional_initial_state_tolerates_partial_response(hass, monkeypat
     assert coordinator.value("autoupdate_enabled") is True
 
 
+def test_websocket_parser_reassembles_split_json(hass) -> None:
+    """JSON split across callbacks should be handled once it is complete."""
+    coordinator = AtreaAMotionCoordinator(
+        hass=hass,
+        name="Atrea",
+        host="192.0.2.10",
+        username="user",
+        password="pass",
+        model="aMotion",
+        version="1.0.0",
+    )
+    messages: list[dict] = []
+    coordinator._handle_message_on_loop = messages.append  # type: ignore[method-assign]
+
+    coordinator._handle_message_text_on_loop('{"id": 1, "response":')
+    assert messages == []
+
+    coordinator._handle_message_text_on_loop('{"ok": true}}')
+
+    assert messages == [{"id": 1, "response": {"ok": True}}]
+    assert coordinator._message_buffer == ""
+
+
+def test_websocket_parser_handles_concatenated_json(hass) -> None:
+    """Multiple JSON objects in one callback should be handled in order."""
+    coordinator = AtreaAMotionCoordinator(
+        hass=hass,
+        name="Atrea",
+        host="192.0.2.10",
+        username="user",
+        password="pass",
+        model="aMotion",
+        version="1.0.0",
+    )
+    messages: list[dict] = []
+    coordinator._handle_message_on_loop = messages.append  # type: ignore[method-assign]
+
+    coordinator._handle_message_text_on_loop('{"id": 1}{"id": 2}\n')
+
+    assert messages == [{"id": 1}, {"id": 2}]
+    assert coordinator._message_buffer == ""
+
+
+async def test_websocket_close_discards_partial_json(hass) -> None:
+    """A partial payload from a closed socket must not reach a new session."""
+    coordinator = AtreaAMotionCoordinator(
+        hass=hass,
+        name="Atrea",
+        host="192.0.2.10",
+        username="user",
+        password="pass",
+        model="aMotion",
+        version="1.0.0",
+    )
+    coordinator._loop = asyncio.get_running_loop()
+    coordinator._ready.set()
+    coordinator._handle_message_text_on_loop('{"id": 1')
+
+    coordinator.on_close(None, 1000, "test close")
+    await asyncio.sleep(0)
+
+    assert coordinator._message_buffer == ""
+    assert not coordinator._ready.is_set()
+
+
 async def test_async_control_reauthenticates_after_unauthorized(hass) -> None:
     """Control writes should retry once after websocket authorization expires."""
     coordinator = AtreaAMotionCoordinator(

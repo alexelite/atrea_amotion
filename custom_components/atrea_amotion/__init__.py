@@ -628,7 +628,14 @@ class AtreaAMotionCoordinator:
         self.socket_state = SOCK_DISCONNECTED
         self._authorized = False
         if self._loop is not None:
-            self._loop.call_soon_threadsafe(self._ready.clear)
+            self._loop.call_soon_threadsafe(self._reset_connection_state_on_loop)
+        else:
+            self._message_buffer = ""
+
+    def _reset_connection_state_on_loop(self) -> None:
+        """Clear state that must not leak into another websocket session."""
+        self._ready.clear()
+        self._message_buffer = ""
 
     def on_pong(self, ws, message) -> None:
         """Socket pong event."""
@@ -641,7 +648,15 @@ class AtreaAMotionCoordinator:
         self.sent_counter = 0
         self._last_message_at = monotonic()
         if self._loop is not None:
-            asyncio.run_coroutine_threadsafe(self.authenticate_with_server(), self._loop)
+            asyncio.run_coroutine_threadsafe(
+                self._async_prepare_new_connection(),
+                self._loop,
+            )
+
+    async def _async_prepare_new_connection(self) -> None:
+        """Reset per-connection parsing state and authenticate."""
+        self._message_buffer = ""
+        await self.authenticate_with_server()
 
     def on_message(self, ws, msg: str | bytes) -> None:
         """Socket message event."""
