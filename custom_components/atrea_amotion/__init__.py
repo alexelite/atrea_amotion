@@ -27,7 +27,7 @@ from homeassistant.util import Throttle
 
 from .const import API_TIMEOUT, CONF_DEBUG_LOGGING, DOMAIN, LOGGER
 from .discovery import async_rediscover_config_entry
-from .state_messages import hass_language, translate_state_message, translation_key_for
+from .state_messages import hass_language, preload_state_messages, translate_state_message, translation_key_for
 
 MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=15)
 PERIODIC_REFRESH_INTERVAL = 15
@@ -115,6 +115,8 @@ class AtreaState:
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the integration from a config entry."""
+    # Warm the state-message cache off the event loop; websocket handlers only hit the cache.
+    await hass.async_add_executor_job(preload_state_messages, hass_language(hass))
     try:
         _apply_logger_options(entry)
         atrea = await _async_build_coordinator(hass, entry.data)
