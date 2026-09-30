@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+
+import custom_components.atrea_amotion as atrea_module
 from custom_components.atrea_amotion.__init__ import AtreaAMotionCoordinator
 
 
@@ -158,6 +161,54 @@ def test_ui_info_null_active_states_are_coerced_to_empty_dict(hass) -> None:
     assert coordinator.state.active_states == {}
     assert coordinator.value("active_state_count") == 0
     assert coordinator.value("notifications") == []
+
+
+async def test_optional_initial_state_uses_one_shared_timeout(hass, monkeypatch) -> None:
+    """Modbus and update readiness should share one concurrent deadline."""
+    coordinator = AtreaAMotionCoordinator(
+        hass=hass,
+        name="Atrea",
+        host="192.0.2.10",
+        username="user",
+        password="pass",
+        model="aMotion",
+        version="1.0.0",
+    )
+    coordinator._modbus_ready.set()
+    coordinator._update_ready.set()
+    real_wait_for = asyncio.wait_for
+    timeouts: list[float] = []
+
+    async def tracked_wait_for(awaitable, timeout):
+        timeouts.append(timeout)
+        return await real_wait_for(awaitable, timeout)
+
+    monkeypatch.setattr(atrea_module.asyncio, "wait_for", tracked_wait_for)
+
+    await coordinator._async_wait_for_optional_initial_state()
+
+    assert timeouts == [atrea_module.OPTIONAL_INITIAL_STATE_TIMEOUT]
+
+
+async def test_optional_initial_state_tolerates_partial_response(hass, monkeypatch) -> None:
+    """A missing optional endpoint should not prevent setup from continuing."""
+    coordinator = AtreaAMotionCoordinator(
+        hass=hass,
+        name="Atrea",
+        host="192.0.2.10",
+        username="user",
+        password="pass",
+        model="aMotion",
+        version="1.0.0",
+    )
+    coordinator._apply_update({"autoupdate": True})
+    monkeypatch.setattr(atrea_module, "OPTIONAL_INITIAL_STATE_TIMEOUT", 0.01)
+
+    await coordinator._async_wait_for_optional_initial_state()
+
+    assert coordinator._update_ready.is_set()
+    assert not coordinator._modbus_ready.is_set()
+    assert coordinator.value("autoupdate_enabled") is True
 
 
 async def test_async_control_reauthenticates_after_unauthorized(hass) -> None:

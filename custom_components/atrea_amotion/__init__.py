@@ -34,6 +34,7 @@ PERIODIC_REFRESH_INTERVAL = 15
 CONTROL_BURST_REFRESH_INTERVAL = 1
 CONTROL_BURST_REFRESH_CYCLES = 20
 STATE_DISPATCH_DEBOUNCE_SECONDS = 1.0
+OPTIONAL_INITIAL_STATE_TIMEOUT = 5
 
 SOCK_CONNECTED = "Open"
 SOCK_DISCONNECTED = "Close"
@@ -295,13 +296,21 @@ class AtreaAMotionCoordinator:
         await asyncio.wait_for(self._user_config_ready.wait(), timeout=10)
         await asyncio.wait_for(self._diagram_ready.wait(), timeout=10)
         await asyncio.wait_for(self._moments_ready.wait(), timeout=10)
-        # Optional endpoints, but the switch platform needs their values at setup.
+        await self._async_wait_for_optional_initial_state()
+        self._ensure_refresh_task()
+
+    async def _async_wait_for_optional_initial_state(self) -> None:
+        """Wait briefly for optional values needed by the switch platform."""
         try:
-            await asyncio.wait_for(self._modbus_ready.wait(), timeout=5)
-            await asyncio.wait_for(self._update_ready.wait(), timeout=5)
+            await asyncio.wait_for(
+                asyncio.gather(
+                    self._modbus_ready.wait(),
+                    self._update_ready.wait(),
+                ),
+                timeout=OPTIONAL_INITIAL_STATE_TIMEOUT,
+            )
         except TimeoutError:
             pass
-        self._ensure_refresh_task()
 
     async def async_shutdown(self) -> None:
         """Stop the websocket connection."""
