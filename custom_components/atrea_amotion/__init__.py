@@ -34,6 +34,7 @@ PERIODIC_REFRESH_INTERVAL = 15
 CONTROL_BURST_REFRESH_INTERVAL = 1
 CONTROL_BURST_REFRESH_CYCLES = 20
 STATE_DISPATCH_DEBOUNCE_SECONDS = 1.0
+OPTIONAL_INITIAL_STATE_TIMEOUT = 5
 
 SOCK_CONNECTED = "Open"
 SOCK_DISCONNECTED = "Close"
@@ -251,6 +252,8 @@ class AtreaAMotionCoordinator:
         self._pending_requests: dict[int, str] = {}
         self._response_waiters: dict[int, asyncio.Future[dict[str, Any]]] = {}
         self._last_message_at = monotonic()
+        self._json_decoder = json.JSONDecoder()
+        self._message_buffer = ""
 
         self.capabilities = AtreaCapabilities()
         self.state = AtreaState(discovery={"type": model, "version": version, "name": name})
@@ -293,13 +296,21 @@ class AtreaAMotionCoordinator:
         await asyncio.wait_for(self._user_config_ready.wait(), timeout=10)
         await asyncio.wait_for(self._diagram_ready.wait(), timeout=10)
         await asyncio.wait_for(self._moments_ready.wait(), timeout=10)
-        # Optional endpoints, but the switch platform needs their values at setup.
+        await self._async_wait_for_optional_initial_state()
+        self._ensure_refresh_task()
+
+    async def _async_wait_for_optional_initial_state(self) -> None:
+        """Wait briefly for optional values needed by the switch platform."""
         try:
-            await asyncio.wait_for(self._modbus_ready.wait(), timeout=5)
-            await asyncio.wait_for(self._update_ready.wait(), timeout=5)
+            await asyncio.wait_for(
+                asyncio.gather(
+                    self._modbus_ready.wait(),
+                    self._update_ready.wait(),
+                ),
+                timeout=OPTIONAL_INITIAL_STATE_TIMEOUT,
+            )
         except TimeoutError:
             pass
-        self._ensure_refresh_task()
 
     async def async_shutdown(self) -> None:
         """Stop the websocket connection."""
@@ -542,7 +553,11 @@ class AtreaAMotionCoordinator:
                 on_error=self.on_error,
                 on_pong=self.on_pong,
             )
-            self._thread = threading.Thread(target=self.ws.run_forever, daemon=True)
+            self._thread = threading.Thread(
+                target=self.ws.run_forever,
+                kwargs={"skip_utf8_validation": True},
+                daemon=True,
+            )
             self._thread.start()
             return True
         except websocket.WebSocketException as err:
@@ -613,7 +628,14 @@ class AtreaAMotionCoordinator:
         self.socket_state = SOCK_DISCONNECTED
         self._authorized = False
         if self._loop is not None:
-            self._loop.call_soon_threadsafe(self._ready.clear)
+            self._loop.call_soon_threadsafe(self._reset_connection_state_on_loop)
+        else:
+            self._message_buffer = ""
+
+    def _reset_connection_state_on_loop(self) -> None:
+        """Clear state that must not leak into another websocket session."""
+        self._ready.clear()
+        self._message_buffer = ""
 
     def on_pong(self, ws, message) -> None:
         """Socket pong event."""
@@ -626,21 +648,59 @@ class AtreaAMotionCoordinator:
         self.sent_counter = 0
         self._last_message_at = monotonic()
         if self._loop is not None:
-            asyncio.run_coroutine_threadsafe(self.authenticate_with_server(), self._loop)
+            asyncio.run_coroutine_threadsafe(
+                self._async_prepare_new_connection(),
+                self._loop,
+            )
 
-    def on_message(self, ws, msg: str) -> None:
+    async def _async_prepare_new_connection(self) -> None:
+        """Reset per-connection parsing state and authenticate."""
+        self._message_buffer = ""
+        await self.authenticate_with_server()
+
+    def on_message(self, ws, msg: str | bytes) -> None:
         """Socket message event."""
         self.sent_counter = 0
         self._last_message_at = monotonic()
         LOGGER.debug("Received websocket message: %s", msg)
-        try:
-            message = json.loads(msg)
-        except json.JSONDecodeError:
-            LOGGER.debug("Ignoring invalid JSON payload")
-            return
+
+        if isinstance(msg, bytes):
+            text = msg.decode("utf-8", errors="ignore")
+        else:
+            text = msg
 
         if self._loop is not None:
-            self._loop.call_soon_threadsafe(self._handle_message_on_loop, message)
+            self._loop.call_soon_threadsafe(self._handle_message_text_on_loop, text)
+
+    def _handle_message_text_on_loop(self, payload: str) -> None:
+        """Parse one or more JSON objects from a websocket text payload."""
+        self._message_buffer += payload
+
+        while True:
+            self._message_buffer = self._message_buffer.lstrip()
+            if not self._message_buffer:
+                return
+
+            try:
+                message, index = self._json_decoder.raw_decode(self._message_buffer)
+            except json.JSONDecodeError as err:
+                # Atrea occasionally concatenates or splits JSON texts across callbacks.
+                # Keep partial payloads buffered and recover from obvious garbage prefixes.
+                next_object = self._message_buffer.find("{", 1)
+                if next_object > 0 and err.pos == 0:
+                    LOGGER.debug("Dropping undecodable websocket prefix: %r", self._message_buffer[:next_object])
+                    self._message_buffer = self._message_buffer[next_object:]
+                    continue
+                if len(self._message_buffer) > 65536:
+                    LOGGER.warning("Discarding oversized undecodable websocket buffer")
+                    self._message_buffer = ""
+                return
+
+            self._message_buffer = self._message_buffer[index:]
+            if isinstance(message, dict):
+                self._handle_message_on_loop(message)
+            else:
+                LOGGER.debug("Ignoring non-object websocket payload: %r", message)
 
     def _handle_message_on_loop(self, message: dict[str, Any]) -> None:
         """Handle websocket messages on the HA event loop."""
