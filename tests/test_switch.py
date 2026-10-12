@@ -55,9 +55,9 @@ async def test_switches_are_created_and_call_setters(hass, MockConfigEntry) -> N
 
     assert len(added_entities) == 2
 
-    modbus_switch = next(entity for entity in added_entities if entity.name == "Modbus TCP")
+    modbus_switch = next(entity for entity in added_entities if entity.translation_key == "modbus_enabled")
     autoupdate_switch = next(
-        entity for entity in added_entities if entity.name == "Firmware auto update"
+        entity for entity in added_entities if entity.translation_key == "autoupdate_enabled"
     )
 
     assert modbus_switch.is_on is True

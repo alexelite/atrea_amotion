@@ -69,8 +69,8 @@ async def test_config_numbers_use_range_metadata_and_set_values(hass, MockConfig
 
     await async_setup_entry(hass, entry, _async_add_entities)
 
-    entity_by_name = {entity.name: entity for entity in added_entities}
-    season_switch = entity_by_name["Season switch temperature"]
+    entity_by_key = {entity.translation_key: entity for entity in added_entities}
+    season_switch = entity_by_key["season_switch_temp"]
 
     assert season_switch.native_value == 18.5
     assert season_switch.native_min_value == -30.0
