@@ -8,12 +8,14 @@ from datetime import date
 from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature, HVACMode
 from homeassistant.components.climate.const import HVACAction
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import ATTR_TEMPERATURE, CONF_HOST, CONF_NAME, UnitOfTemperature
+from homeassistant.const import ATTR_TEMPERATURE, CONF_NAME, UnitOfTemperature
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.util import dt as dt_util
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from .const import DOMAIN
+from .identity import AtreaAvailability, device_identity, device_info
+from .registry_migration import with_compatibility_aliases
 
 
 def _coerce_temperature(value: object) -> float | None:
@@ -98,6 +100,7 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: Callable
 ) -> None:
     """Set up climate entity from a config entry."""
+    async_add_entities = with_compatibility_aliases(hass, entry, "climate", async_add_entities)
     coordinator = hass.data[DOMAIN][entry.entry_id]["atrea"]
     if not coordinator.async_capabilities().has_climate_control:
         return
@@ -106,7 +109,7 @@ async def async_setup_entry(
     async_add_entities([AtreaAMotionClimate(coordinator, entry, sensor_name)])
 
 
-class AtreaAMotionClimate(ClimateEntity):
+class AtreaAMotionClimate(AtreaAvailability, ClimateEntity):
     """Representation of aMotion comfort control."""
 
     _attr_supported_features = (
@@ -120,14 +123,8 @@ class AtreaAMotionClimate(ClimateEntity):
     def __init__(self, coordinator, entry: ConfigEntry, sensor_name: str) -> None:
         self.coordinator = coordinator
         self._name = sensor_name
-        self._attr_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}-climate"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, f"{sensor_name}-{entry.data.get(CONF_HOST)}")},
-            manufacturer="Atrea CZ",
-            model=self.coordinator.model,
-            name=sensor_name,
-            sw_version=self.coordinator.version,
-        )
+        self._attr_unique_id = f"{device_identity(entry)}-climate"
+        self._attr_device_info = device_info(entry, coordinator, sensor_name)
         self._unsubscribe = None
 
     async def async_added_to_hass(self) -> None:
@@ -232,7 +229,7 @@ class AtreaAMotionClimate(ClimateEntity):
         available_work_regimes = self.coordinator.async_capabilities().enum_for("work_regime")
         filter_due_date = _date_from_parts(self.coordinator.value("filter_due_date"))
         filter_days_remaining = (
-            (filter_due_date - date.today()).days if filter_due_date is not None else None
+            (filter_due_date - dt_util.now().date()).days if filter_due_date is not None else None
         )
         damper_open = self.coordinator.value("damper_io_state")
         damper_percent = None if damper_open is None else (100 if damper_open else 0)

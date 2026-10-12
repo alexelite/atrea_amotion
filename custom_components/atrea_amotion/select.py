@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_NAME
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.const import CONF_NAME
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .identity import AtreaAvailability, device_identity, device_info
+from .registry_migration import with_compatibility_aliases
 
 
 BYPASS_LABELS = {
@@ -68,6 +69,7 @@ def _option_for_label(label: str, raw_options: list[str], labels: dict[str, str]
 
 async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Set up select entities."""
+    async_add_entities = with_compatibility_aliases(hass, entry, "select", async_add_entities)
     coordinator = hass.data[DOMAIN][entry.entry_id]["atrea"]
     sensor_name = entry.data.get(CONF_NAME) or "aatrea"
     if not coordinator.async_capabilities().has_bypass_control:
@@ -83,7 +85,7 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities: AddEnt
         async_add_entities(entities)
 
 
-class AtreaBypassSelect(SelectEntity):
+class AtreaBypassSelect(AtreaAvailability, SelectEntity):
     """Bypass mode select."""
 
     _attr_has_entity_name = True
@@ -91,17 +93,10 @@ class AtreaBypassSelect(SelectEntity):
     def __init__(self, coordinator, entry: ConfigEntry, sensor_name: str) -> None:
         self.coordinator = coordinator
         self._raw_options = coordinator.async_capabilities().enum_for("bypass_control_req")
-        self._attr_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}-bypass"
+        self._attr_unique_id = f"{device_identity(entry)}-bypass"
         self._attr_name = "Bypass mode"
         self._attr_options = [_label_for_option(option) for option in self._raw_options]
-        self._device_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, self._device_unique_id)},
-            manufacturer="Atrea CZ",
-            model=self.coordinator.model,
-            name=sensor_name,
-            sw_version=self.coordinator.version,
-        )
+        self._attr_device_info = device_info(entry, coordinator, sensor_name)
         self._unsubscribe = None
 
     async def async_added_to_hass(self) -> None:
@@ -136,7 +131,7 @@ class AtreaBypassSelect(SelectEntity):
         )
 
 
-class AtreaConfigSelect(SelectEntity):
+class AtreaConfigSelect(AtreaAvailability, SelectEntity):
     """Select entity backed by Atrea config values."""
 
     _attr_has_entity_name = True
@@ -155,17 +150,10 @@ class AtreaConfigSelect(SelectEntity):
         self._key = key
         self._labels = labels
         self._raw_options = coordinator.async_capabilities().enum_for(key)
-        self._attr_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}-{key}"
+        self._attr_unique_id = f"{device_identity(entry)}-{key}"
         self._attr_name = name
         self._attr_options = [_label_for_option(option, self._labels) for option in self._raw_options]
-        self._device_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, self._device_unique_id)},
-            manufacturer="Atrea CZ",
-            model=self.coordinator.model,
-            name=sensor_name,
-            sw_version=self.coordinator.version,
-        )
+        self._attr_device_info = device_info(entry, coordinator, sensor_name)
         self._unsubscribe = None
 
     async def async_added_to_hass(self) -> None:

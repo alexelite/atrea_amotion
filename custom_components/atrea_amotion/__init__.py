@@ -18,15 +18,18 @@ from homeassistant.const import (
     CONF_NAME,
     CONF_PASSWORD,
     CONF_USERNAME,
+    EVENT_HOMEASSISTANT_STOP,
     Platform,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import Throttle
 
 from .const import API_TIMEOUT, CONF_DEBUG_LOGGING, DOMAIN, LOGGER
 from .discovery import async_rediscover_config_entry
+from .identity import device_identity, serial_number
+from .registry_migration import async_migrate_registry
 from .state_messages import hass_language, preload_state_messages, translate_state_message, translation_key_for
 
 MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=15)
@@ -118,11 +121,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up the integration from a config entry."""
     # Warm the state-message cache off the event loop; websocket handlers only hit the cache.
     await hass.async_add_executor_job(preload_state_messages, hass_language(hass))
+    atrea = None
     try:
         _apply_logger_options(entry)
         atrea = await _async_build_coordinator(hass, entry.data)
         await atrea.async_initialize()
+        _validate_unit_serial(entry.data, atrea)
     except Exception as err:
+        if atrea is not None:
+            await atrea.async_shutdown()
         rediscovered = await async_rediscover_config_entry(hass, entry.data)
         if rediscovered is None:
             raise ConfigEntryNotReady from err
@@ -149,13 +156,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         try:
             atrea = await _async_build_coordinator(hass, updated_data)
             await atrea.async_initialize()
+            _validate_unit_serial(updated_data, atrea)
         except Exception as rediscovery_err:
+            await atrea.async_shutdown()
             raise ConfigEntryNotReady from rediscovery_err
+
+    updated_data = dict(entry.data)
+    detected_serial = serial_number(atrea.state.discovery)
+    if detected_serial and not serial_number(updated_data):
+        updated_data["production_number"] = detected_serial
+    if not updated_data.get("board_number") and atrea.state.discovery.get("board_number"):
+        updated_data["board_number"] = atrea.state.discovery["board_number"]
+    # Persist the chosen identity once; later metadata must never change it.
+    if not updated_data.get("device_identity"):
+        updated_data["device_identity"] = (
+            f"production:{serial_number(updated_data)}"
+            if serial_number(updated_data)
+            else (
+                f"board:{str(updated_data['board_number']).strip().lower()}"
+                if updated_data.get("board_number")
+                else device_identity(entry)
+            )
+        )
+    if updated_data != entry.data:
+        hass.config_entries.async_update_entry(entry, data=updated_data)
+    atrea.expected_serial = serial_number(updated_data)
+    atrea._serial_verified = (
+        atrea.expected_serial is None
+        or atrea.expected_serial == serial_number(atrea.state.discovery)
+    )
+
+    try:
+        identity_aliases = async_migrate_registry(hass, entry)
+    except Exception:
+        await atrea.async_shutdown()
+        raise
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "atrea": atrea,
+        "identity_aliases": identity_aliases,
         "options_unsub": entry.add_update_listener(_async_entry_updated),
+        "stop_unsub": hass.bus.async_listen_once(
+            EVENT_HOMEASSISTANT_STOP, atrea.async_shutdown
+        ),
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -168,8 +212,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     options_unsub = data.get("options_unsub")
     if options_unsub is not None:
         options_unsub()
+    if stop_unsub := data.get("stop_unsub"):
+        stop_unsub()
     await data["atrea"].async_shutdown()
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+def _validate_unit_serial(entry_data, coordinator) -> None:
+    """Reject a different unit, even if it accepts the same credentials."""
+    expected = serial_number(entry_data)
+    if expected and expected != serial_number(coordinator.state.discovery):
+        raise ConfigEntryNotReady("Unit serial does not match the configured unit")
 
 
 async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
@@ -200,6 +253,7 @@ async def _async_build_coordinator(
         password=entry_data[CONF_PASSWORD],
         model=entry_data.get("model", "aMotion"),
         version=entry_data.get("version", "unknown"),
+        expected_serial=serial_number(entry_data),
     )
 
 
@@ -215,12 +269,15 @@ class AtreaAMotionCoordinator:
         password: str,
         model: str,
         version: str,
+        expected_serial: str | None = None,
     ) -> None:
         self.hass = hass
         self.name = name
         self.host = host
         self.username = username
         self.password = password
+        self.expected_serial = expected_serial
+        self._serial_verified = expected_serial is None
         self.socket_state = SOCK_DISCONNECTED
         self.sent_counter = 0
         self._msg_id = 0
@@ -274,6 +331,19 @@ class AtreaAMotionCoordinator:
     def update_signal(self) -> str:
         return f"{DOMAIN}_{self.host}_update"
 
+    @property
+    def available(self) -> bool:
+        """Require fresh live and maintenance data in the current connection."""
+        return (
+            not self._shutdown
+            and self.socket_state == SOCK_CONNECTED
+            and self._authorized
+            and self._serial_verified
+            and self._ui_info_ready.is_set()
+            and self._diagram_ready.is_set()
+            and self._moments_ready.is_set()
+        )
+
     async def async_initialize(self) -> None:
         """Open websocket, authenticate, and load initial metadata."""
         self._loop = asyncio.get_running_loop()
@@ -312,17 +382,33 @@ class AtreaAMotionCoordinator:
         except TimeoutError:
             pass
 
-    async def async_shutdown(self) -> None:
+    async def async_shutdown(self, event=None) -> None:
         """Stop the websocket connection."""
         self._shutdown = True
+        self.socket_state = SOCK_DISCONNECTED
+        self._authorized = False
+        if self._dispatch_handle is not None:
+            self._dispatch_handle.cancel()
+            self._dispatch_handle = None
+        tasks = []
         if self._refresh_task is not None:
             self._refresh_task.cancel()
+            tasks.append(self._refresh_task)
             self._refresh_task = None
         if self._control_burst_task is not None:
             self._control_burst_task.cancel()
+            tasks.append(self._control_burst_task)
             self._control_burst_task = None
         if self.ws is not None:
             await self.hass.async_add_executor_job(self.ws.close)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        if self._thread is not None and self._thread.is_alive():
+            await self.hass.async_add_executor_job(self._thread.join, 5)
+        for waiter in self._response_waiters.values():
+            if not waiter.done():
+                waiter.cancel()
+        self._response_waiters.clear()
 
     def async_state(self) -> AtreaState:
         """Return the current state snapshot."""
@@ -519,7 +605,9 @@ class AtreaAMotionCoordinator:
 
     async def connect_wss(self) -> bool:
         """Connect and authorize the websocket session."""
-        if self.socket_state == SOCK_CONNECTED and self._authorized:
+        if self._shutdown:
+            return False
+        if self.socket_state == SOCK_CONNECTED and self._authorized and self._serial_verified:
             return True
 
         if not await self.open_wss_thread():
@@ -530,7 +618,16 @@ class AtreaAMotionCoordinator:
                 await self.authenticate_with_server()
                 try:
                     await asyncio.wait_for(self._ready.wait(), timeout=5)
-                    return True
+                    if self.expected_serial and not self._serial_verified:
+                        # publish_wss can be called while _lock is held. Do not
+                        # reacquire it via async_request during authentication.
+                        self._msg_id += 1
+                        self._pending_requests[self._msg_id] = "discovery"
+                        await self.publish_wss({
+                            "endpoint": "discovery", "id": self._msg_id, "args": None
+                        })
+                        await asyncio.wait_for(self._discovery_ready.wait(), timeout=5)
+                    return self._serial_verified
                 except TimeoutError:
                     LOGGER.debug("Timed out waiting for websocket authorization")
             LOGGER.debug("Awaiting websocket authorization... %s", attempt)
@@ -618,24 +715,44 @@ class AtreaAMotionCoordinator:
 
     def on_error(self, ws, error) -> None:
         """Socket error event."""
+        if ws is not None and ws is not self.ws:
+            return
         details = f"(details: {error})" if error else ""
         LOGGER.debug("Websocket error %s", details)
         self.socket_state = SOCK_ERROR
+        self._authorized = False
+        self._call_on_loop(self._reset_connection_state_on_loop)
 
     def on_close(self, ws, close_status_code, close_msg) -> None:
         """Socket close event."""
+        if ws is not None and ws is not self.ws:
+            return
         LOGGER.debug("Websocket closed: %s %s", close_status_code, close_msg)
         self.socket_state = SOCK_DISCONNECTED
         self._authorized = False
-        if self._loop is not None:
-            self._loop.call_soon_threadsafe(self._reset_connection_state_on_loop)
-        else:
+        if not self._call_on_loop(self._reset_connection_state_on_loop):
             self._message_buffer = ""
+
+    def _call_on_loop(self, callback, *args) -> bool:
+        """Ignore late transport callbacks during and after HA shutdown."""
+        if self._shutdown or self._loop is None or self._loop.is_closed():
+            return False
+        try:
+            self._loop.call_soon_threadsafe(callback, *args)
+        except RuntimeError:
+            return False
+        return True
 
     def _reset_connection_state_on_loop(self) -> None:
         """Clear state that must not leak into another websocket session."""
         self._ready.clear()
+        self._serial_verified = self.expected_serial is None
+        self._discovery_ready.clear()
+        self._ui_info_ready.clear()
+        self._diagram_ready.clear()
+        self._moments_ready.clear()
         self._message_buffer = ""
+        self._notify_state_changed()
 
     def on_pong(self, ws, message) -> None:
         """Socket pong event."""
@@ -643,23 +760,32 @@ class AtreaAMotionCoordinator:
 
     def on_open(self, ws) -> None:
         """Socket open event."""
+        if self._shutdown:
+            ws.close()
+            return
         LOGGER.debug("Websocket connected")
         self.socket_state = SOCK_CONNECTED
         self.sent_counter = 0
         self._last_message_at = monotonic()
-        if self._loop is not None:
-            asyncio.run_coroutine_threadsafe(
-                self._async_prepare_new_connection(),
-                self._loop,
-            )
+        self._call_on_loop(self._prepare_new_connection_on_loop)
+
+    def _prepare_new_connection_on_loop(self) -> None:
+        """Create connection work only while the owning loop is running."""
+        if not self._shutdown:
+            asyncio.create_task(self._async_prepare_new_connection())
 
     async def _async_prepare_new_connection(self) -> None:
         """Reset per-connection parsing state and authenticate."""
+        if self._shutdown:
+            return
         self._message_buffer = ""
+        self._reset_connection_state_on_loop()
         await self.authenticate_with_server()
 
     def on_message(self, ws, msg: str | bytes) -> None:
         """Socket message event."""
+        if self._shutdown or (ws is not None and ws is not self.ws):
+            return
         self.sent_counter = 0
         self._last_message_at = monotonic()
         LOGGER.debug("Received websocket message: %s", msg)
@@ -669,11 +795,12 @@ class AtreaAMotionCoordinator:
         else:
             text = msg
 
-        if self._loop is not None:
-            self._loop.call_soon_threadsafe(self._handle_message_text_on_loop, text)
+        self._call_on_loop(self._handle_message_text_on_loop, text)
 
     def _handle_message_text_on_loop(self, payload: str) -> None:
         """Parse one or more JSON objects from a websocket text payload."""
+        if self._shutdown:
+            return
         self._message_buffer += payload
 
         while True:
@@ -704,6 +831,8 @@ class AtreaAMotionCoordinator:
 
     def _handle_message_on_loop(self, message: dict[str, Any]) -> None:
         """Handle websocket messages on the HA event loop."""
+        if self._shutdown:
+            return
         message_id = message.get("id")
         if message_id == self._login_msg_id and message.get("code") == "OK":
             self._token = message.get("response")
@@ -824,6 +953,14 @@ class AtreaAMotionCoordinator:
 
     def _apply_discovery(self, response: dict[str, Any]) -> None:
         """Store discovery metadata."""
+        self._serial_verified = (
+            self.expected_serial is None
+            or serial_number(response) == self.expected_serial
+        )
+        if not self._serial_verified:
+            LOGGER.error("Connected unit serial does not match the configured unit")
+            self._notify_state_changed()
+            return
         self.state.discovery.update(response)
         self._discovery_ready.set()
         self._notify_state_changed()
@@ -1168,18 +1305,24 @@ class AtreaAMotionCoordinator:
 
     def _notify_state_changed(self) -> None:
         """Broadcast updated state, coalescing bursts into one dispatcher tick."""
+        if self._shutdown or (self._loop is not None and self._loop.is_closed()):
+            return
         with self._dispatch_lock:
             if self._dispatch_pending:
                 return
             self._dispatch_pending = True
 
         if self._loop is not None:
-            self._loop.call_soon_threadsafe(self._schedule_dispatch_on_loop)
+            if not self._call_on_loop(self._schedule_dispatch_on_loop):
+                self._dispatch_pending = False
             return
         self.hass.add_job(self._dispatch_state_changed)
 
+    @callback
     def _schedule_dispatch_on_loop(self) -> None:
         """Debounce bursts of websocket updates before dispatching to entities."""
+        if self._shutdown:
+            return
         if self._loop is None:
             self.hass.add_job(self._dispatch_state_changed)
             return
@@ -1192,15 +1335,27 @@ class AtreaAMotionCoordinator:
             self._dispatch_state_changed,
         )
 
+    @callback
     def _dispatch_state_changed(self) -> None:
         """Dispatch a single pending state-change notification."""
         self._dispatch_handle = None
         with self._dispatch_lock:
             self._dispatch_pending = False
+        if self._shutdown:
+            return
         async_dispatcher_send(self.hass, self.update_signal)
 
     async def publish_wss(self, payload: dict[str, Any]) -> bool:
         """Publish JSON over websocket."""
+        if self._shutdown:
+            return False
+        if (
+            self.expected_serial
+            and not self._serial_verified
+            and payload.get("endpoint") not in {"login", "discovery"}
+        ):
+            if not await self.connect_wss():
+                return False
         json_message = json.dumps(payload)
         LOGGER.debug("Publishing websocket message: %s", json_message)
 
@@ -1215,6 +1370,15 @@ class AtreaAMotionCoordinator:
             self.socket_state = SOCK_DISCONNECTED
 
         for attempt in range(N_RETRY):
+            # A reconnect inside this publish can invalidate an earlier serial
+            # check. Never send the queued command to an unverified session.
+            if (
+                self.expected_serial
+                and not self._serial_verified
+                and payload.get("endpoint") not in {"login", "discovery"}
+            ):
+                if not await self.connect_wss():
+                    return False
             if self.socket_state == SOCK_CONNECTED and self.ws is not None:
                 try:
                     await self.hass.async_add_executor_job(self.ws.send, json_message)

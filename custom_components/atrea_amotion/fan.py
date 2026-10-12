@@ -6,13 +6,14 @@ from typing import Any
 
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_NAME
+from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .identity import AtreaAvailability, device_identity, device_info
+from .registry_migration import with_compatibility_aliases
 
 FAN_VARIABLES = (
     ("fan_power_req_sup", "Supply fan"),
@@ -27,6 +28,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up fan entities from a config entry."""
+    async_add_entities = with_compatibility_aliases(hass, entry, "fan", async_add_entities)
     coordinator = hass.data[DOMAIN][entry.entry_id]["atrea"]
     sensor_name = entry.data.get(CONF_NAME) or "aatrea"
 
@@ -39,7 +41,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class AtreaAMotionFan(FanEntity):
+class AtreaAMotionFan(AtreaAvailability, FanEntity):
     """A percentage-based fan entity backed by aMotion control variables."""
 
     _attr_supported_features = (
@@ -60,16 +62,9 @@ class AtreaAMotionFan(FanEntity):
         self.coordinator = coordinator
         self.request_key = request_key
         self.factor_key = request_key.replace("power_req", "factor")
-        self._attr_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}-{request_key}"
+        self._attr_unique_id = f"{device_identity(entry)}-{request_key}"
         self._attr_name = label
-        self._device_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, self._device_unique_id)},
-            manufacturer="Atrea CZ",
-            model=self.coordinator.model,
-            name=sensor_name,
-            sw_version=self.coordinator.version,
-        )
+        self._attr_device_info = device_info(entry, coordinator, sensor_name)
         self._unsubscribe = None
 
     async def async_added_to_hass(self) -> None:

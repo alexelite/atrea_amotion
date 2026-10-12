@@ -3,9 +3,100 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock, Mock
 
 import custom_components.atrea_amotion as atrea_module
 from custom_components.atrea_amotion.__init__ import AtreaAMotionCoordinator
+
+
+async def test_reconnection_requires_fresh_live_and_filter_data(hass):
+    """Cached values must not make a reconnected unit appear ready."""
+    coordinator = AtreaAMotionCoordinator(hass, "Atrea", "192.0.2.10", "user", "pass", "aMotion", "1", expected_serial="SN-1")
+    coordinator._loop = asyncio.get_running_loop()
+    coordinator.socket_state = "Open"
+    coordinator._authorized = True
+    coordinator._apply_discovery({"production_number": "SN-1"})
+    coordinator._apply_ui_info({})
+    coordinator._apply_ui_diagram_data({})
+    coordinator._apply_moments({})
+    assert coordinator.available
+    coordinator.on_close(None, 1000, "closed")
+    await asyncio.sleep(0)
+    coordinator.socket_state = "Open"
+    coordinator._authorized = True
+    assert not coordinator.available
+    coordinator._apply_discovery({"production_number": "SN-1"})
+    coordinator._apply_ui_info({})
+    coordinator._apply_ui_diagram_data({})
+    assert not coordinator.available
+    coordinator._apply_moments({})
+    assert coordinator.available
+    await coordinator.async_shutdown()
+
+
+def test_late_callbacks_ignore_closed_loop(hass):
+    """Transport threads must not schedule work after loop shutdown."""
+    coordinator = AtreaAMotionCoordinator(hass, "Atrea", "192.0.2.10", "user", "pass", "aMotion", "1")
+    loop = asyncio.new_event_loop()
+    loop.close()
+    coordinator._loop = loop
+    coordinator.on_close(None, 1000, "closed")
+    coordinator.on_error(None, OSError("unreachable"))
+    coordinator.on_message(None, '{"id": 1}')
+    coordinator.on_open(Mock())
+
+
+def test_wrong_serial_never_becomes_available(hass):
+    coordinator = AtreaAMotionCoordinator(hass, "Atrea", "192.0.2.10", "user", "pass", "aMotion", "1", expected_serial="SN-1")
+    coordinator.socket_state = "Open"
+    coordinator._authorized = True
+    coordinator._apply_discovery({"production_number": "SN-2"})
+    coordinator._apply_ui_info({})
+    coordinator._apply_ui_diagram_data({})
+    coordinator._apply_moments({})
+    assert not coordinator.available
+    assert not coordinator._discovery_ready.is_set()
+
+
+async def test_control_verifies_serial_before_sending_without_deadlock(hass):
+    """Serial verification must work even while the request lock is held."""
+    coordinator = AtreaAMotionCoordinator(hass, "Atrea", "192.0.2.10", "user", "pass", "aMotion", "1", expected_serial="SN-1")
+    coordinator.socket_state = "Open"
+    coordinator._authorized = True
+    coordinator._ready.set()
+    coordinator.open_wss_thread = AsyncMock(return_value=True)
+    coordinator.authenticate_with_server = AsyncMock()
+    endpoints = []
+
+    def send(message):
+        import json
+        endpoint = json.loads(message)["endpoint"]
+        endpoints.append(endpoint)
+        if endpoint == "discovery":
+            coordinator._apply_discovery({"production_number": "SN-1"})
+
+    coordinator.ws = Mock(send=send, close=Mock())
+    _, sent = await asyncio.wait_for(coordinator._async_send_request("control", {"variables": {"work_regime": "OFF"}}), timeout=2)
+    assert sent
+    assert endpoints == ["discovery", "control"]
+    await coordinator.async_shutdown()
+
+
+async def test_reconnect_cannot_send_queued_control_to_unverified_unit(hass):
+    """A serial check before publish must not authorize a later connection."""
+    coordinator = AtreaAMotionCoordinator(hass, "Atrea", "192.0.2.10", "user", "pass", "aMotion", "1", expected_serial="SN-1")
+    coordinator._serial_verified = True
+    coordinator.ws = Mock()
+
+    async def reconnect():
+        coordinator.socket_state = "Open"
+        coordinator._serial_verified = False
+        return False
+
+    coordinator.connect_wss = reconnect
+    assert not await coordinator.publish_wss({"endpoint": "control", "id": 1, "args": {}})
+    coordinator.ws.send.assert_not_called()
+    await coordinator.async_shutdown()
 
 
 def test_ui_diagram_data_nested_payload_is_unwrapped(hass) -> None:
@@ -274,6 +365,7 @@ async def test_websocket_close_discards_partial_json(hass) -> None:
 
     assert coordinator._message_buffer == ""
     assert not coordinator._ready.is_set()
+    await coordinator.async_shutdown()
 
 
 async def test_async_control_reauthenticates_after_unauthorized(hass) -> None:
@@ -319,6 +411,7 @@ async def test_async_control_reauthenticates_after_unauthorized(hass) -> None:
     assert coordinator.requested_value("work_regime") == "OFF"
     assert ("control_panel", None) in sent_requests
     assert ("ui_info", None) in sent_requests
+    await coordinator.async_shutdown()
 
 
 async def test_async_request_message_times_out_when_response_never_arrives(hass) -> None:
