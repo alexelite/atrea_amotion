@@ -27,7 +27,14 @@ async def test_async_setup_entry_rediscovery_updates_host(hass, MockConfigEntry)
     )
     entry.add_to_hass(hass)
 
-    initialize = AsyncMock(side_effect=[Exception("offline"), None])
+    attempts = 0
+
+    async def initialize(coordinator):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise Exception("offline")
+        coordinator.state.discovery["production_number"] = "PN-1"
 
     with (
         patch(
@@ -55,4 +62,23 @@ async def test_async_setup_entry_rediscovery_updates_host(hass, MockConfigEntry)
 
     assert entry.data[CONF_HOST] == "192.0.2.20"
     assert entry.title == "Homer HRV"
+    assert entry.data["device_identity"] == "production:PN-1"
     assert hass.data[DOMAIN][entry.entry_id]["atrea"].host == "192.0.2.20"
+
+
+async def test_setup_learns_missing_serial_before_entities_are_created(hass, MockConfigEntry):
+    """Old configs acquire the unit SN before any platform chooses its IDs."""
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_NAME: "Atrea", CONF_HOST: "192.0.2.10", CONF_USERNAME: "user", CONF_PASSWORD: "pass"})
+    entry.add_to_hass(hass)
+
+    async def initialize(coordinator):
+        coordinator.state.discovery["production_number"] = "SN-1"
+
+    with (
+        patch("custom_components.atrea_amotion.AtreaAMotionCoordinator.async_initialize", initialize),
+        patch.object(hass.config_entries, "async_forward_entry_setups", AsyncMock(return_value=True)),
+    ):
+        assert await async_setup_entry(hass, entry)
+    assert entry.data["production_number"] == "SN-1"
+    assert entry.data["device_identity"] == "production:SN-1"
+    assert hass.data[DOMAIN][entry.entry_id]["atrea"].expected_serial == "SN-1"

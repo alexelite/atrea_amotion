@@ -18,6 +18,7 @@ from homeassistant.data_entry_flow import FlowResult
 
 from .const import API_TIMEOUT, CONF_DEBUG_LOGGING, DEFAULT_NAME, DOMAIN, LOGGER
 from .discovery import async_discover_enriched_devices
+from .identity import serial_number
 
 CONF_DEVICE_ID = "device_id"
 MANUAL_DEVICE_ID = "__manual__"
@@ -215,13 +216,19 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 user_input = validated_input
                 user_input[CONF_DEBUG_LOGGING] = False
                 unique_id = (
-                    user_input.get("board_number")
-                    or user_input.get("production_number")
+                    user_input.get("production_number")
+                    or user_input.get("board_number")
                     or user_input.get("network_mac")
                     or user_input[CONF_HOST]
                 )
                 await self.async_set_unique_id(unique_id)
                 self._abort_if_unique_id_configured()
+                serial = serial_number(user_input)
+                if serial and any(
+                    serial_number(entry.data) == serial
+                    for entry in self._async_current_entries()
+                ):
+                    return self.async_abort(reason="already_configured")
 
                 return self.async_create_entry(
                     title=user_input.get("unit_name") or user_input[CONF_HOST],
@@ -325,6 +332,14 @@ class AtreaOptionsFlowHandler(config_entries.OptionsFlow):
                     step_id="init",
                     data_schema=self._async_options_schema(user_input),
                     errors={"base": error or "unknown"},
+                )
+
+            saved_serial = serial_number(self.config_entry.data)
+            if saved_serial and saved_serial != serial_number(validated_input):
+                return self.async_show_form(
+                    step_id="init",
+                    data_schema=self._async_options_schema(user_input),
+                    errors={"base": "wrong_device"},
                 )
 
             updated_data = dict(self.config_entry.data)

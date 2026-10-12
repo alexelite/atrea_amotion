@@ -19,6 +19,7 @@ TO_REDACT = {
     "production_number",
     "mac",
     "network_mac",
+    "device_identity",
 }
 
 

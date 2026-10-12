@@ -4,12 +4,22 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from homeassistant.const import CONF_HOST, CONF_NAME, CONF_PASSWORD, CONF_USERNAME
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
 from custom_components.atrea_amotion.const import CONF_DEBUG_LOGGING, DOMAIN
 from custom_components.atrea_amotion.config_flow import CONF_DEVICE_ID
+
+
+@pytest.fixture(autouse=True)
+async def mock_entry_setup(hass):
+    """Flow tests validate configuration without connecting to real hardware."""
+    with patch("custom_components.atrea_amotion.async_setup_entry", AsyncMock(return_value=True)):
+        yield
+        await hass.async_block_till_done()
 
 
 async def test_user_flow_creates_entry_from_discovered_device(hass: HomeAssistant) -> None:
@@ -294,7 +304,7 @@ async def test_options_flow_updates_connection_details(
                         CONF_DEBUG_LOGGING: True,
                         "model": "New model",
                         "version": "2.0.0",
-                        "production_number": "456",
+                        "production_number": "123",
                         "board_number": "cc:dd",
                         "mac": "cc:dd",
                         "network_mac": "aa:bb:cc:dd:ee:ff",
@@ -328,3 +338,19 @@ async def test_options_flow_updates_connection_details(
         CONF_PASSWORD: "secret",
         CONF_DEBUG_LOGGING: True,
     }
+
+
+@pytest.mark.parametrize("detected_serial", ["OTHER-SN", None])
+async def test_options_refuses_different_or_missing_serial(hass, MockConfigEntry, detected_serial):
+    entry = MockConfigEntry(domain=DOMAIN, data={CONF_NAME: "Atrea", CONF_HOST: "192.0.2.10", CONF_USERNAME: "user", CONF_PASSWORD: "pass", "production_number": "SN-1"})
+    entry.add_to_hass(hass)
+    original_data = dict(entry.data)
+    with (
+        patch("custom_components.atrea_amotion.config_flow.async_discover_enriched_devices", AsyncMock(return_value=[])),
+        patch("custom_components.atrea_amotion.config_flow._async_validate_connection", AsyncMock(return_value=({**entry.data, CONF_HOST: "192.0.2.20", "production_number": detected_serial}, None))),
+    ):
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        result = await hass.config_entries.options.async_configure(result["flow_id"], user_input={CONF_HOST: "192.0.2.20", CONF_USERNAME: "user", CONF_PASSWORD: "pass", CONF_DEBUG_LOGGING: False})
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"] == {"base": "wrong_device"}
+    assert dict(entry.data) == original_data

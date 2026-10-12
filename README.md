@@ -95,6 +95,32 @@ Some protocol features are intentionally documented first and planned for later 
 - Modbus TCP support
 - broader support validation across more aMotion variants
 
+## Hardware identity in 1.2.0
+
+Devices and entities now use the production serial number (the SN displayed in
+discovery), rather than the configured name and IP address. The chosen identity
+is saved in the config entry, and the serial is also shown in device information.
+Rediscovery requires the saved serial to match, even if another unit has the same
+name, IP, or credentials. Units without a serial use a persisted board identifier
+or config-entry identifier. Disconnected entities are unavailable until fresh
+live and filter data arrive. Filter days remaining are calculated from the unit's
+due date using Home Assistant's configured timezone.
+
+Existing installations migrate automatically after the unit's serial is verified
+and before any entities are loaded. Migration changes internal identifiers while
+preserving device IDs, entity IDs, names, user settings and history references.
+No manual `.storage` edits or changes to automation targets are needed. A backup
+before the update is recommended.
+
+If an IP change has already created duplicate devices, the earliest device remains
+the primary device. Existing duplicate entities stay operational as compatibility
+aliases connected to the same unit, including their original device references.
+The duplicate remains visible until its references are reviewed and it can be
+removed deliberately. This preserves automations using either set of entities;
+it does not merge their recorded histories. Subsequent restarts or IP changes do
+not create further copies. Old `amotionatrea` integration records are untouched.
+Conflicting hardware identities stop migration before any registry record changes.
+
 ## Protocol Notes
 
 Working protocol and entity-model notes are kept here:

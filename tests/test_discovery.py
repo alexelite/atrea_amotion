@@ -5,11 +5,20 @@ from __future__ import annotations
 import msgpack
 
 from custom_components.atrea_amotion.discovery import (
+    _device_match_score,
     _enumerate_ipv4_targets,
     async_rediscover_config_entry,
     normalize_mac,
     parse_discovery_response,
 )
+
+
+def test_saved_serial_overrides_board_name_and_ip():
+    """Board replacement must not win over a unit serial mismatch."""
+    entry = {"production_number": "SN-1", "board_number": "BOARD-1", "unit_name": "Atrea", "host": "192.0.2.10"}
+    assert _device_match_score(entry, {"production_number": "SN-2", "board_number": "BOARD-1", "unit_name": "Atrea", "ip": "192.0.2.10"}) == 0
+    assert _device_match_score(entry, {"production_number": "SN-1", "board_number": "BOARD-2", "ip": "192.0.2.20"}) == 1000
+    assert _device_match_score(entry, {"board_number": "BOARD-1", "unit_name": "Atrea", "ip": "192.0.2.10"}) == 0
 
 
 def test_parse_discovery_response_decodes_known_tlvs() -> None:

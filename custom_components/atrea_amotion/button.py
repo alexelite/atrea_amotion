@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from homeassistant.components.button import ButtonEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_NAME
+from homeassistant.const import CONF_NAME
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .identity import AtreaAvailability, device_identity, device_info
+from .registry_migration import with_compatibility_aliases
 
 
 async def async_setup_entry(
@@ -20,6 +21,7 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up button entities from a config entry."""
+    async_add_entities = with_compatibility_aliases(hass, entry, "button", async_add_entities)
     coordinator = hass.data[DOMAIN][entry.entry_id]["atrea"]
     sensor_name = entry.data.get(CONF_NAME) or "atrea"
     entities: list[ButtonEntity] = [AtreaRebootButton(coordinator, entry, sensor_name)]
@@ -28,7 +30,7 @@ async def async_setup_entry(
     async_add_entities(entities)
 
 
-class AtreaFilterResetButton(ButtonEntity):
+class AtreaFilterResetButton(AtreaAvailability, ButtonEntity):
     """Button that confirms filter replacement on the unit."""
 
     _attr_has_entity_name = True
@@ -36,17 +38,10 @@ class AtreaFilterResetButton(ButtonEntity):
 
     def __init__(self, coordinator, entry: ConfigEntry, sensor_name: str) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}-reset-filter"
+        self._attr_unique_id = f"{device_identity(entry)}-reset-filter"
         self._attr_name = "Confirm filter replacement"
         self._attr_icon = "mdi:air-filter"
-        self._device_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, self._device_unique_id)},
-            manufacturer="Atrea CZ",
-            model=self.coordinator.model,
-            name=sensor_name,
-            sw_version=self.coordinator.version,
-        )
+        self._attr_device_info = device_info(entry, coordinator, sensor_name)
         self._unsubscribe = None
 
     async def async_added_to_hass(self) -> None:
@@ -69,7 +64,7 @@ class AtreaFilterResetButton(ButtonEntity):
         await self.coordinator.async_reset_filter_interval()
 
 
-class AtreaRebootButton(ButtonEntity):
+class AtreaRebootButton(AtreaAvailability, ButtonEntity):
     """Button that requests a device reboot."""
 
     _attr_has_entity_name = True
@@ -77,17 +72,10 @@ class AtreaRebootButton(ButtonEntity):
 
     def __init__(self, coordinator, entry: ConfigEntry, sensor_name: str) -> None:
         self.coordinator = coordinator
-        self._attr_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}-reboot"
+        self._attr_unique_id = f"{device_identity(entry)}-reboot"
         self._attr_name = "Reboot unit"
         self._attr_icon = "mdi:restart-alert"
-        self._device_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, self._device_unique_id)},
-            manufacturer="Atrea CZ",
-            model=self.coordinator.model,
-            name=sensor_name,
-            sw_version=self.coordinator.version,
-        )
+        self._attr_device_info = device_info(entry, coordinator, sensor_name)
         self._attr_extra_state_attributes = {
             "warning": "Manufacturer recommends switching the unit off before reboot."
         }

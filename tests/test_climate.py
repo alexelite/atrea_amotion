@@ -83,9 +83,10 @@ class _MockCoordinator:
             }
         )
         self.control_calls: list[dict[str, object]] = []
+        self.capabilities = _MockCapabilities()
 
     def async_capabilities(self):
-        return _MockCapabilities()
+        return self.capabilities
 
     def async_state(self):
         class _State:

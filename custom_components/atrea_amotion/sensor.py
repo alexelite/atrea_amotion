@@ -14,12 +14,14 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_NAME, PERCENTAGE, UnitOfTemperature
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.const import CONF_NAME, PERCENTAGE, UnitOfTemperature
+from homeassistant.util import dt as dt_util
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityCategory
 
 from .const import DOMAIN
+from .identity import AtreaAvailability, device_identity, device_info
+from .registry_migration import with_compatibility_aliases
 
 
 def _date_from_parts(value: Any) -> date | None:
@@ -318,6 +320,7 @@ async def async_setup_entry(
     async_add_entities: Callable,
 ) -> None:
     """Set up aMotion sensors."""
+    async_add_entities = with_compatibility_aliases(hass, entry, "sensor", async_add_entities)
     coordinator = hass.data[DOMAIN][entry.entry_id]["atrea"]
     sensor_name = entry.data.get(CONF_NAME) or "aatrea"
     async_add_entities(
@@ -338,7 +341,7 @@ def _is_supported_sensor(coordinator, description: AtreaSensorDescription) -> bo
     return True
 
 
-class AtreaAMotionSensor(SensorEntity):
+class AtreaAMotionSensor(AtreaAvailability, SensorEntity):
     """Representation of a single aMotion sensor."""
 
     entity_description: AtreaSensorDescription
@@ -347,15 +350,8 @@ class AtreaAMotionSensor(SensorEntity):
     def __init__(self, coordinator, entry, description: AtreaSensorDescription, sensor_name) -> None:
         self.coordinator = coordinator
         self.entity_description = description
-        self._attr_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}-{description.key}"
-        self._device_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, self._device_unique_id)},
-            manufacturer="Atrea CZ",
-            model=self.coordinator.model,
-            name=sensor_name,
-            sw_version=self.coordinator.version,
-        )
+        self._attr_unique_id = f"{device_identity(entry)}-{description.key}"
+        self._attr_device_info = device_info(entry, coordinator, sensor_name)
         self._unsubscribe = None
 
     async def async_added_to_hass(self) -> None:
@@ -385,7 +381,7 @@ class AtreaAMotionSensor(SensorEntity):
             return _date_from_any(raw_value)
         if key == "filter_service_days_remaining":
             due_date = _date_from_parts(self.coordinator.value("filter_due_date"))
-            return (due_date - date.today()).days if due_date is not None else None
+            return (due_date - dt_util.now().date()).days if due_date is not None else None
         if key == "filter_interval_active":
             return "on" if raw_value else "off"
         if key in {"fan_eta_requested", "fan_sup_requested", "fan_requested"}:

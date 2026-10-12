@@ -6,13 +6,14 @@ from dataclasses import dataclass
 
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_HOST, CONF_NAME
-from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.const import CONF_NAME
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .identity import AtreaAvailability, device_identity, device_info
+from .registry_migration import with_compatibility_aliases
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ ATREA_SWITCHES: tuple[AtreaSwitchDescription, ...] = (
 
 async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
     """Set up switch entities."""
+    async_add_entities = with_compatibility_aliases(hass, entry, "switch", async_add_entities)
     coordinator = hass.data[DOMAIN][entry.entry_id]["atrea"]
     sensor_name = entry.data.get(CONF_NAME) or "atrea"
     async_add_entities(
@@ -54,7 +56,7 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities: AddEnt
     )
 
 
-class AtreaToggleSwitch(SwitchEntity):
+class AtreaToggleSwitch(AtreaAvailability, SwitchEntity):
     """Generic on/off switch backed by websocket actions."""
 
     _attr_has_entity_name = True
@@ -69,17 +71,10 @@ class AtreaToggleSwitch(SwitchEntity):
     ) -> None:
         self.coordinator = coordinator
         self.entity_description = description
-        self._attr_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}-{description.key}"
+        self._attr_unique_id = f"{device_identity(entry)}-{description.key}"
         self._attr_name = description.name
         self._attr_icon = description.icon
-        self._device_unique_id = f"{sensor_name}-{entry.data.get(CONF_HOST)}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, self._device_unique_id)},
-            manufacturer="Atrea CZ",
-            model=self.coordinator.model,
-            name=sensor_name,
-            sw_version=self.coordinator.version,
-        )
+        self._attr_device_info = device_info(entry, coordinator, sensor_name)
         self._unsubscribe = None
 
     async def async_added_to_hass(self) -> None:

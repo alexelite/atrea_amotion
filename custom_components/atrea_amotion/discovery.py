@@ -354,6 +354,11 @@ async def async_discover_enriched_devices(
 
 def _device_match_score(entry_data: Mapping[str, Any], device: Mapping[str, Any]) -> int:
     """Score how well a discovered device matches an existing config entry."""
+    # A saved serial is authoritative, including when the board has been replaced.
+    entry_serial = str(entry_data.get("production_number") or "").strip()
+    device_serial = str(device.get("production_number") or "").strip()
+    if entry_serial:
+        return 1000 if entry_serial == device_serial else 0
     score = 0
 
     entry_network_mac = normalize_mac(entry_data.get("network_mac"))
@@ -365,6 +370,10 @@ def _device_match_score(entry_data: Mapping[str, Any], device: Mapping[str, Any]
         entry_data.get("board_number") or entry_data.get("mac")
     )
     device_board_number = _normalize_identifier(device.get("board_number"))
+    if entry_board_number and entry_board_number != device_board_number:
+        return 0
+    if entry_network_mac and entry_network_mac != device_network_mac:
+        return 0
     if entry_board_number and device_board_number and entry_board_number == device_board_number:
         score += 90
 
