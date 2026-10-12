@@ -1,0 +1,105 @@
+"""Switch entities for Atrea aMotion."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_NAME
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity import EntityCategory
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
+
+from .const import DOMAIN
+from .identity import AtreaAvailability, device_identity, device_info
+from .registry_migration import with_compatibility_aliases
+
+
+@dataclass(frozen=True)
+class AtreaSwitchDescription(SwitchEntityDescription):
+    """Description for aMotion switch entities."""
+
+    value_key: str = ""
+    setter: str = ""
+
+
+ATREA_SWITCHES: tuple[AtreaSwitchDescription, ...] = (
+    AtreaSwitchDescription(
+        key="modbus_enabled",
+        translation_key="modbus_enabled",
+        icon="mdi:transit-connection-variant",
+        value_key="modbus_enabled",
+        setter="async_set_modbus_enabled",
+    ),
+    AtreaSwitchDescription(
+        key="autoupdate_enabled",
+        translation_key="autoupdate_enabled",
+        icon="mdi:package-up",
+        value_key="autoupdate_enabled",
+        setter="async_set_autoupdate_enabled",
+    ),
+)
+
+
+async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
+    """Set up switch entities."""
+    async_add_entities = with_compatibility_aliases(hass, entry, "switch", async_add_entities)
+    coordinator = hass.data[DOMAIN][entry.entry_id]["atrea"]
+    sensor_name = entry.data.get(CONF_NAME) or "atrea"
+    async_add_entities(
+        [
+            AtreaToggleSwitch(coordinator, entry, description, sensor_name)
+            for description in ATREA_SWITCHES
+            if coordinator.value(description.value_key) is not None
+        ]
+    )
+
+
+class AtreaToggleSwitch(AtreaAvailability, SwitchEntity):
+    """Generic on/off switch backed by websocket actions."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(
+        self,
+        coordinator,
+        entry: ConfigEntry,
+        description: AtreaSwitchDescription,
+        sensor_name: str,
+    ) -> None:
+        self.coordinator = coordinator
+        self.entity_description = description
+        self._attr_unique_id = f"{device_identity(entry)}-{description.key}"
+        self._attr_icon = description.icon
+        self._attr_device_info = device_info(entry, coordinator, sensor_name)
+        self._unsubscribe = None
+
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to coordinator updates."""
+        self._unsubscribe = async_dispatcher_connect(
+            self.hass, self.coordinator.update_signal, self._handle_coordinator_update
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Disconnect dispatcher listener."""
+        if self._unsubscribe is not None:
+            self._unsubscribe()
+
+    def _handle_coordinator_update(self) -> None:
+        """Update state."""
+        self.schedule_update_ha_state()
+
+    @property
+    def is_on(self) -> bool:
+        """Return switch state."""
+        return bool(self.coordinator.value(self.entity_description.value_key))
+
+    async def async_turn_on(self, **kwargs) -> None:
+        """Turn the switch on."""
+        await getattr(self.coordinator, self.entity_description.setter)(True)
+
+    async def async_turn_off(self, **kwargs) -> None:
+        """Turn the switch off."""
+        await getattr(self.coordinator, self.entity_description.setter)(False)

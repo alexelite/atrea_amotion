@@ -1,0 +1,432 @@
+"""Sensors for Atrea aMotion."""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import date, datetime
+from typing import Any
+
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
+    SensorStateClass,
+)
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_NAME, PERCENTAGE, UnitOfTemperature
+from homeassistant.util import dt as dt_util
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.entity import EntityCategory
+
+from .const import DOMAIN
+from .identity import AtreaAvailability, device_identity, device_info
+from .registry_migration import with_compatibility_aliases
+
+
+def _date_from_parts(value: Any) -> date | None:
+    """Build a date from a websocket date object."""
+    if not isinstance(value, dict):
+        return None
+    year = value.get("year")
+    month = value.get("month")
+    day = value.get("day")
+    if not all(isinstance(part, int) for part in (year, month, day)):
+        return None
+    if year <= 1970 or month <= 0 or day <= 0:
+        return None
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def _date_from_epoch(value: Any) -> date | None:
+    """Build a date from an epoch timestamp."""
+    if not isinstance(value, (int, float)) or value <= 0:
+        return None
+    return datetime.fromtimestamp(value).date()
+
+
+def _date_from_any(value: Any) -> date | None:
+    """Build a date from either structured parts or an epoch timestamp."""
+    return _date_from_parts(value) or _date_from_epoch(value)
+
+
+def _number_from_any(value: Any) -> float | int | None:
+    """Convert numeric-like values to a real number."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return value
+    if isinstance(value, str):
+        try:
+            number = float(value)
+        except ValueError:
+            return None
+        return int(number) if number.is_integer() else number
+    return None
+
+
+@dataclass(frozen=True)
+class AtreaSensorDescription(SensorEntityDescription):
+    """Description for aMotion sensor entities."""
+
+    value_key: str = ""
+    request_key: str | None = None
+
+
+ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
+    AtreaSensorDescription(
+        key="outside_temperature",
+        translation_key="outside_temperature",
+        icon="mdi:thermometer",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="temp_oda",
+    ),
+    AtreaSensorDescription(
+        key="outside_temperature_mean",
+        translation_key="outside_temperature_mean",
+        icon="mdi:thermometer",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="temp_oda_mean",
+    ),
+    AtreaSensorDescription(
+        key="inside_temperature",
+        translation_key="inside_temperature",
+        icon="mdi:thermometer",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="temp_ida",
+    ),
+    AtreaSensorDescription(
+        key="exhaust_temperature",
+        translation_key="exhaust_temperature",
+        icon="mdi:thermometer",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="temp_eha",
+    ),
+    AtreaSensorDescription(
+        key="supply_temperature",
+        translation_key="supply_temperature",
+        icon="mdi:thermometer",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="temp_sup",
+    ),
+    AtreaSensorDescription(
+        key="extract_temperature",
+        translation_key="extract_temperature",
+        icon="mdi:thermometer",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="temp_eta",
+    ),
+    AtreaSensorDescription(
+        key="fan_eta_requested",
+        translation_key="fan_eta_requested",
+        icon="mdi:fan-chevron-down",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="stored_fan_power_req_eta",
+        request_key="fan_power_req_eta",
+    ),
+    AtreaSensorDescription(
+        key="fan_sup_requested",
+        translation_key="fan_sup_requested",
+        icon="mdi:fan-chevron-up",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="stored_fan_power_req_sup",
+        request_key="fan_power_req_sup",
+    ),
+    AtreaSensorDescription(
+        key="fan_requested",
+        translation_key="fan_requested",
+        icon="mdi:fan-plus",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="stored_fan_power_req",
+        request_key="fan_power_req",
+    ),
+    AtreaSensorDescription(
+        key="fan_eta_factor",
+        translation_key="fan_eta_factor",
+        icon="mdi:fan",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="fan_eta_factor",
+    ),
+    AtreaSensorDescription(
+        key="fan_sup_factor",
+        translation_key="fan_sup_factor",
+        icon="mdi:fan",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="fan_sup_factor",
+    ),
+    AtreaSensorDescription(
+        key="bypass_estim",
+        translation_key="bypass_estim",
+        icon="mdi:pipe-valve",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="bypass_estim",
+    ),
+    AtreaSensorDescription(
+        key="damper_io_state",
+        translation_key="damper_io_state",
+        icon="mdi:door-sliding",
+        value_key="damper_io_state",
+    ),
+    AtreaSensorDescription(
+        key="fan_eta_operating_time",
+        translation_key="fan_eta_operating_time",
+        icon="mdi:timer-outline",
+        native_unit_of_measurement="h",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_key="fan_eta_operating_time",
+    ),
+    AtreaSensorDescription(
+        key="fan_sup_operating_time",
+        translation_key="fan_sup_operating_time",
+        icon="mdi:timer-outline",
+        native_unit_of_measurement="h",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_key="fan_sup_operating_time",
+    ),
+    AtreaSensorDescription(
+        key="season_current",
+        translation_key="season_current",
+        value_key="season_current",
+    ),
+    AtreaSensorDescription(
+        key="mode_current",
+        translation_key="mode_current",
+        value_key="mode_current",
+    ),
+    AtreaSensorDescription(
+        key="active_state_count",
+        translation_key="active_state_count",
+        icon="mdi:alert-outline",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="active_state_count",
+    ),
+    AtreaSensorDescription(
+        key="active_notifications",
+        translation_key="active_notifications",
+        icon="mdi:message-alert-outline",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="notification_count",
+    ),
+    AtreaSensorDescription(
+        key="filter_interval_active",
+        translation_key="filter_interval_active",
+        icon="mdi:air-filter",
+        value_key="filter_interval_active",
+    ),
+    AtreaSensorDescription(
+        key="filter_due_date",
+        translation_key="filter_due_date",
+        icon="mdi:calendar-alert",
+        device_class=SensorDeviceClass.DATE,
+        value_key="filter_due_date",
+    ),
+    AtreaSensorDescription(
+        key="last_filter_reset",
+        translation_key="last_filter_reset",
+        icon="mdi:calendar-check",
+        device_class=SensorDeviceClass.DATE,
+        value_key="last_filter_reset",
+    ),
+    AtreaSensorDescription(
+        key="filter_service_days_remaining",
+        translation_key="filter_service_days_remaining",
+        icon="mdi:calendar-clock",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="filter_due_date",
+    ),
+    AtreaSensorDescription(
+        key="m1_register",
+        translation_key="m1_register",
+        icon="mdi:timer-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        native_unit_of_measurement="h",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_key="m1_register",
+    ),
+    AtreaSensorDescription(
+        key="m2_register",
+        translation_key="m2_register",
+        icon="mdi:timer-outline",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        native_unit_of_measurement="h",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_key="m2_register",
+    ),
+    AtreaSensorDescription(
+        key="motor_role_mapping",
+        translation_key="motor_role_mapping",
+        icon="mdi:swap-horizontal",
+        entity_category=EntityCategory.DIAGNOSTIC,
+        entity_registry_enabled_default=False,
+        value_key="motor_role_mapping",
+    ),
+    AtreaSensorDescription(
+        key="uv_lamp_register",
+        translation_key="uv_lamp_register",
+        icon="mdi:lightbulb",
+        state_class=SensorStateClass.TOTAL_INCREASING,
+        value_key="uv_lamp_register",
+    ),
+    AtreaSensorDescription(
+        key="uv_lamp_service_life",
+        translation_key="uv_lamp_service_life",
+        icon="mdi:lightbulb-on-outline",
+        native_unit_of_measurement="h",
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="uv_lamp_service_life",
+    ),
+)
+
+UNIT_SENSOR_KEYS = {
+    "temp_oda",
+    "temp_oda_mean",
+    "temp_ida",
+    "temp_eha",
+    "temp_sup",
+    "temp_eta",
+    "fan_eta_factor",
+    "fan_sup_factor",
+    "season_current",
+    "mode_current",
+}
+
+
+async def async_setup_entry(
+    hass,
+    entry: ConfigEntry,
+    async_add_entities: Callable,
+) -> None:
+    """Set up aMotion sensors."""
+    async_add_entities = with_compatibility_aliases(hass, entry, "sensor", async_add_entities)
+    coordinator = hass.data[DOMAIN][entry.entry_id]["atrea"]
+    sensor_name = entry.data.get(CONF_NAME) or "aatrea"
+    async_add_entities(
+        [
+            AtreaAMotionSensor(coordinator, entry, description, sensor_name)
+            for description in ATREA_SENSORS
+            if _is_supported_sensor(coordinator, description)
+        ]
+    )
+
+
+def _is_supported_sensor(coordinator, description: AtreaSensorDescription) -> bool:
+    """Return whether a sensor is supported by current capabilities."""
+    if description.request_key is not None:
+        return description.request_key in coordinator.async_capabilities().requests
+    if description.value_key in UNIT_SENSOR_KEYS:
+        return description.value_key in coordinator.async_capabilities().unit_fields
+    return True
+
+
+class AtreaAMotionSensor(AtreaAvailability, SensorEntity):
+    """Representation of a single aMotion sensor."""
+
+    entity_description: AtreaSensorDescription
+    _attr_has_entity_name = True
+
+    def __init__(self, coordinator, entry, description: AtreaSensorDescription, sensor_name) -> None:
+        self.coordinator = coordinator
+        self.entity_description = description
+        self._attr_unique_id = f"{device_identity(entry)}-{description.key}"
+        self._attr_device_info = device_info(entry, coordinator, sensor_name)
+        self._unsubscribe = None
+
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to coordinator updates."""
+        self._unsubscribe = async_dispatcher_connect(
+            self.hass, self.coordinator.update_signal, self._handle_coordinator_update
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Disconnect dispatcher listener."""
+        if self._unsubscribe is not None:
+            self._unsubscribe()
+
+    def _handle_coordinator_update(self) -> None:
+        """Update HA state from coordinator."""
+        self.schedule_update_ha_state()
+
+    @property
+    def native_value(self) -> float | int | str | date | None:
+        """Return sensor value."""
+        key = self.entity_description.key
+        raw_value = self.coordinator.value(self.entity_description.value_key)
+
+        if key == "filter_due_date":
+            return _date_from_parts(raw_value)
+        if key == "last_filter_reset":
+            return _date_from_any(raw_value)
+        if key == "filter_service_days_remaining":
+            due_date = _date_from_parts(self.coordinator.value("filter_due_date"))
+            return (due_date - dt_util.now().date()).days if due_date is not None else None
+        if key == "filter_interval_active":
+            return "on" if raw_value else "off"
+        if key in {"fan_eta_requested", "fan_sup_requested", "fan_requested"}:
+            return _number_from_any(raw_value)
+        if key in {"m1_register", "m2_register"}:
+            if isinstance(raw_value, (int, float)):
+                return int(raw_value // 3600)
+            return None
+        if key == "motor_role_mapping":
+            return raw_value
+
+        if isinstance(raw_value, float):
+            return round(raw_value, 1)
+        return raw_value
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return additional attributes for composite sensors."""
+        if self.entity_description.key == "active_state_count":
+            return {
+                "active_state_names": self.coordinator.value("active_state_names") or [],
+                "active_states": self.coordinator.value("active_states") or {},
+            }
+        if self.entity_description.key == "active_notifications":
+            return {
+                "notifications": self.coordinator.value("notifications") or [],
+                "warning_count": self.coordinator.value("warning_count") or 0,
+                "fault_count": self.coordinator.value("fault_count") or 0,
+                "highest_severity": self.coordinator.value("highest_severity"),
+                "primary_message": self.coordinator.value("primary_message"),
+                "has_warning": self.coordinator.value("has_warning") or False,
+                "has_fault": self.coordinator.value("has_fault") or False,
+            }
+        if self.entity_description.key in {"m1_register", "m2_register"}:
+            return {"raw_seconds": self.coordinator.value(self.entity_description.value_key)}
+        if self.entity_description.key == "motor_role_mapping":
+            return {
+                "motor_1_hours": self.coordinator.value("m1_register"),
+                "motor_2_hours": self.coordinator.value("m2_register"),
+                "supply_fan_hours": self.coordinator.value("fan_sup_operating_time"),
+                "extract_fan_hours": self.coordinator.value("fan_eta_operating_time"),
+                "explanation": (
+                    "Mapping is inferred by comparing motor counters with supply/extract "
+                    "fan operating hours. Equal counters are ambiguous, which is common on "
+                    "reversible units or when both fans accumulated the same runtime."
+                ),
+            }
+        return {}
