@@ -22,7 +22,7 @@ BYPASS_LABELS = {
 
 CONFIG_SELECTS = {
     "season_request": {
-        "name": "Season settings",
+        "translation_key": "season_request",
         "labels": {
             "HEATING": "Heating",
             "NON_HEATING": "Non-heating",
@@ -32,7 +32,7 @@ CONFIG_SELECTS = {
         },
     },
     "temp_oda_mean_interval": {
-        "name": "T-ODA averaging time slot",
+        "translation_key": "temp_oda_mean_interval",
         "labels": {
             "HOURS_1": "1 hour",
             "HOURS_3": "3 hours",
@@ -77,7 +77,7 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities: AddEnt
     else:
         entities = [AtreaBypassSelect(coordinator, entry, sensor_name)]
     entities.extend(
-        AtreaConfigSelect(coordinator, entry, sensor_name, key, meta["name"], meta["labels"])
+        AtreaConfigSelect(coordinator, entry, sensor_name, key, meta["translation_key"], meta["labels"])
         for key, meta in CONFIG_SELECTS.items()
         if key in coordinator.async_capabilities().config_fields
     )
@@ -94,7 +94,7 @@ class AtreaBypassSelect(AtreaAvailability, SelectEntity):
         self.coordinator = coordinator
         self._raw_options = coordinator.async_capabilities().enum_for("bypass_control_req")
         self._attr_unique_id = f"{device_identity(entry)}-bypass"
-        self._attr_name = "Bypass mode"
+        self._attr_translation_key = "bypass_mode"
         self._attr_options = [_label_for_option(option) for option in self._raw_options]
         self._attr_device_info = device_info(entry, coordinator, sensor_name)
         self._unsubscribe = None
@@ -143,7 +143,7 @@ class AtreaConfigSelect(AtreaAvailability, SelectEntity):
         entry: ConfigEntry,
         sensor_name: str,
         key: str,
-        name: str,
+        translation_key: str,
         labels: dict[str, str],
     ) -> None:
         self.coordinator = coordinator
@@ -151,7 +151,7 @@ class AtreaConfigSelect(AtreaAvailability, SelectEntity):
         self._labels = labels
         self._raw_options = coordinator.async_capabilities().enum_for(key)
         self._attr_unique_id = f"{device_identity(entry)}-{key}"
-        self._attr_name = name
+        self._attr_translation_key = translation_key
         self._attr_options = [_label_for_option(option, self._labels) for option in self._raw_options]
         self._attr_device_info = device_info(entry, coordinator, sensor_name)
         self._unsubscribe = None
