@@ -1,0 +1,321 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "{discovery_hint}",
+        "data": {
+          "device_id": "Nalezená jednotka",
+          "name": "Název",
+          "host": "Adresa (IP)",
+          "password": "Heslo",
+          "username": "Uživatelské jméno"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Nepodařilo se připojit",
+      "device_required": "Vyberte nalezenou jednotku",
+      "invalid_auth": "Neplatné přihlašovací údaje",
+      "invalid_user": "Neplatný uživatel",
+      "unknown": "Neočekávaná chyba"
+    },
+    "abort": {
+      "already_configured": "Zařízení je již nastaveno"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "device_id": "Nalezená jednotka",
+          "host": "Adresa (IP)",
+          "password": "Heslo",
+          "username": "Uživatelské jméno",
+          "debug_logging": "Zapnout ladicí protokolování"
+        }
+      }
+    },
+    "error": {
+      "wrong_device": "Sériové číslo jednotky neodpovídá nastavené jednotce",
+      "already_configured": "Zařízení je již nastaveno",
+      "cannot_connect": "Nepodařilo se připojit",
+      "invalid_auth": "Neplatné přihlašovací údaje"
+    }
+  },
+  "entity": {
+    "button": {
+      "reboot": {
+        "name": "Restartovat jednotku"
+      },
+      "reset_filter": {
+        "name": "Potvrdit výměnu filtrů"
+      }
+    },
+    "fan": {
+      "extract_fan": {
+        "name": "Odtahový ventilátor"
+      },
+      "supply_fan": {
+        "name": "Přívodní ventilátor"
+      },
+      "ventilation_fan": {
+        "name": "Větrání"
+      }
+    },
+    "number": {
+      "season_switch_temp": {
+        "name": "Teplota přepnutí sezóny"
+      },
+      "temp_cool_active_offset": {
+        "name": "Teplotní posun pro zapnutí chlazení"
+      },
+      "temp_ida_cooler_hyst": {
+        "name": "Hystereze T-IDA pro chlazení"
+      },
+      "temp_ida_heater_hyst": {
+        "name": "Hystereze T-IDA pro topení"
+      }
+    },
+    "select": {
+      "bypass_mode": {
+        "name": "Režim bypassu"
+      },
+      "season_request": {
+        "name": "Nastavení sezóny"
+      },
+      "temp_oda_mean_interval": {
+        "name": "Interval průměrování T-ODA"
+      }
+    },
+    "sensor": {
+      "active_notifications": {
+        "name": "Aktivní upozornění"
+      },
+      "active_state_count": {
+        "name": "Počet aktivních stavů"
+      },
+      "bypass_estim": {
+        "name": "Poloha bypassu (odhad)"
+      },
+      "damper_io_state": {
+        "name": "Stav klapek"
+      },
+      "exhaust_temperature": {
+        "name": "Teplota odpadního vzduchu"
+      },
+      "extract_temperature": {
+        "name": "Teplota odtahovaného vzduchu"
+      },
+      "fan_eta_factor": {
+        "name": "Výkon odtahového ventilátoru"
+      },
+      "fan_eta_operating_time": {
+        "name": "Doba provozu odtahového ventilátoru"
+      },
+      "fan_eta_requested": {
+        "name": "Požadovaný výkon odtahu"
+      },
+      "fan_requested": {
+        "name": "Požadovaný výkon větrání"
+      },
+      "fan_sup_factor": {
+        "name": "Výkon přívodního ventilátoru"
+      },
+      "fan_sup_operating_time": {
+        "name": "Doba provozu přívodního ventilátoru"
+      },
+      "fan_sup_requested": {
+        "name": "Požadovaný výkon přívodu"
+      },
+      "filter_due_date": {
+        "name": "Termín výměny filtrů"
+      },
+      "filter_interval_active": {
+        "name": "Interval výměny filtrů aktivní"
+      },
+      "filter_service_days_remaining": {
+        "name": "Zbývající dny do výměny filtrů"
+      },
+      "inside_temperature": {
+        "name": "Vnitřní teplota"
+      },
+      "last_filter_reset": {
+        "name": "Poslední výměna filtrů"
+      },
+      "m1_register": {
+        "name": "Doba provozu motoru 1"
+      },
+      "m2_register": {
+        "name": "Doba provozu motoru 2"
+      },
+      "mode_current": {
+        "name": "Aktuální režim"
+      },
+      "motor_role_mapping": {
+        "name": "Přiřazení motorů"
+      },
+      "outside_temperature": {
+        "name": "Venkovní teplota"
+      },
+      "outside_temperature_mean": {
+        "name": "Průměrná venkovní teplota"
+      },
+      "season_current": {
+        "name": "Aktuální sezóna"
+      },
+      "supply_temperature": {
+        "name": "Teplota přiváděného vzduchu"
+      },
+      "uv_lamp_register": {
+        "name": "UV lampa"
+      },
+      "uv_lamp_service_life": {
+        "name": "Životnost UV lampy"
+      }
+    },
+    "switch": {
+      "autoupdate_enabled": {
+        "name": "Automatická aktualizace firmwaru"
+      },
+      "modbus_enabled": {
+        "name": "Modbus TCP"
+      }
+    },
+    "text": {
+      "unit_name": {
+        "name": "Název jednotky"
+      }
+    }
+  },
+  "state_messages": {
+    "ADIABATIC_COOLING": "Adiabatické chlazení v provozu",
+    "AI_SIGNAL_TO_FAULT_IN_1": "Signál IN1",
+    "AI_SIGNAL_TO_FAULT_IN_2": "Signál IN2",
+    "AI_SIGNAL_TO_FAULT_IN_3": "Signál IN3",
+    "AI_SIGNAL_TO_FAULT_IN_4": "Signál IN4",
+    "ALL_HEATERS_OVERLOAD": "Nedostatečný výkon ohřívačů",
+    "BACNET_ERROR": "BACnet - porucha komunikace",
+    "BUS_ETHERNET_APR": "Porucha Ethernet rozhraní",
+    "BUS_EXTERNAL_APR": "Porucha externí sběrnice",
+    "BUS_INTERNAL_APR": "Porucha interní sběrnice",
+    "CLOUD_DISCONNECTED": "Spojení na CLOUD je přerušeno",
+    "COOLER_BLOCKED": "Chlazení je blokováno",
+    "COOLER_FAULT_COOLER_1": "Porucha chlazení A",
+    "COOLER_FAULT_COOLER_2": "Porucha chlazení B",
+    "COOLER_FAULT_COOLER_3": "Porucha chlazení C",
+    "COOLER_FAULT_COOLER_4": "Porucha chlazení D",
+    "COOLER_OVERLOAD_COOLER_1": "Požadován maximální výkon chladiče A",
+    "COOLER_OVERLOAD_COOLER_2": "Požadován maximální výkon chladiče B",
+    "COOLER_OVERLOAD_COOLER_3": "Požadován maximální výkon chladiče C",
+    "COOLER_OVERLOAD_COOLER_4": "Požadován maximální výkon chladiče D",
+    "COOLING_COOLER_1": "Chlazení A je v chodu",
+    "COOLING_COOLER_2": "Chlazení B je v chodu",
+    "COOLING_COOLER_3": "Chlazení C je v chodu",
+    "COOLING_COOLER_4": "Chlazení D je v chodu",
+    "DEFROST_BOOST": "Zvýšení výkonu při odmražování rekuperátoru",
+    "DEFROST_HRC": "Odmražování rekuperátoru",
+    "DEHUMIDIFICATION_ACTIVE": "Odvlhčování je v provozu",
+    "EVAPORATION": "Odpařování je aktivní",
+    "EVAPORATION_OVERHEAT": "Přehřátí odpařovacího elementu",
+    "EVAPORATION_TIMEOUT": "Maximální čas odpařování",
+    "FILTER_CLOGGED": "Zanesené filtry",
+    "FILTER_CLOGGED_PF1": "Zanesený filtr 1",
+    "FILTER_CLOGGED_PF2": "Zanesený filtr 2",
+    "FILTER_CLOGGED_PF3": "Zanesený filtr 3",
+    "FILTER_INTERVAL": "Interval výměny filtrů",
+    "FIRST_FROST_PROTECTION": "1. mrazová ochrana",
+    "FLOW_LEARNING": "Proces učení průtoků",
+    "FLOW_SENSOR_ETA": "Porucha měření odváděného vzduchu",
+    "FLOW_SENSOR_ODA": "Porucha měření čerstvého vzduchu",
+    "FLOW_SENSOR_SUP": "Porucha měření přiváděného vzduchu",
+    "FROST_HRC": "Zámraz rekuperátoru",
+    "FROST_PROTECTION_CAPILLARY": "Protimrazová ochrana - kapilára",
+    "FROST_PROTECTION_INPUT_D_1": "Protimrazová ochrana - vstup D1",
+    "FROST_PROTECTION_INPUT_D_2": "Protimrazová ochrana - vstup D2",
+    "FROST_PROTECTION_INPUT_D_3": "Protimrazová ochrana - vstup D3",
+    "FROST_PROTECTION_INPUT_D_4": "Protimrazová ochrana - vstup D4",
+    "HEAT_BOOST": "Zvýšený výkon při zátopu",
+    "HEATER_FAULT_HEATER_1": "Porucha ohřívače A",
+    "HEATER_FAULT_HEATER_2": "Porucha ohřívače B",
+    "HEATER_FAULT_HEATER_3": "Porucha ohřívače C",
+    "HEATER_FAULT_HEATER_4": "Porucha ohřívače D",
+    "HEATER_OVERLOAD_HEATER_1": "Požadován maximální výkon ohřívače A",
+    "HEATER_OVERLOAD_HEATER_2": "Požadován maximální výkon ohřívače B",
+    "HEATER_OVERLOAD_HEATER_3": "Požadován maximální výkon ohřívače C",
+    "HEATER_OVERLOAD_HEATER_4": "Požadován maximální výkon ohřívače D",
+    "HEATING_HEATER_1": "Ohřívač A je v chodu",
+    "HEATING_HEATER_2": "Ohřívač B je v chodu",
+    "HEATING_HEATER_3": "Ohřívač C je v chodu",
+    "HEATING_HEATER_4": "Ohřívač D je v chodu",
+    "HEATPUMP_DEFROST": "Odmražování TČ",
+    "HP_MIN_FLOW_ACTIVE": "Minimální průtok pro tepelné čerpadlo",
+    "HP_MIN_FLOW_BLOCKED": "Provoz TČ blokován malým průtokem",
+    "INSPECTION": "Doporučena servisní prohlídka",
+    "INSUFFICIENT_FLOW": "Nedostatečný průtok",
+    "INSUFFICIENT_PREAHEAT": "Nedostatečné předehřátí",
+    "KNX_ERROR": "Chyba KNX komunikace",
+    "LEARNING": "Proces učení",
+    "MAX_CLIENTS_EXCEEDED": "Maximální počet připojených klientů",
+    "MISCONFIGURED": "Neplatná konfigurace",
+    "MODBUS_ERROR": "Modbus - porucha komunikace",
+    "NOT_READY": "Jednotka není připravena",
+    "NOT_READY_COOLER_1": "Chladič A není k dispozici",
+    "NOT_READY_COOLER_2": "Chladič B není k dispozici",
+    "NOT_READY_COOLER_3": "Chladič C není k dispozici",
+    "NOT_READY_COOLER_4": "Chladič D není k dispozici",
+    "NOT_READY_HEATER_1": "Ohřívač A není k dispozici",
+    "NOT_READY_HEATER_2": "Ohřívač B není k dispozici",
+    "NOT_READY_HEATER_3": "Ohřívač C není k dispozici",
+    "NOT_READY_HEATER_4": "Ohřívač D není k dispozici",
+    "OVERHEATING": "Přehřátí jednotky",
+    "OVERHEATING_INPUT": "Přehřátí jednotky - vstup",
+    "PERIPHERY_LOST": "Ztráta spojení s periferií",
+    "PREHEATER": "Předehřev je v chodu",
+    "PRESSURE_SENSOR_DUCT_PRESS": "Porucha manometru v potrubí",
+    "PRESSURE_SENSOR_ETA": "Porucha manometru odtahu",
+    "PRESSURE_SENSOR_ODA": "Porucha manometru čerstvého vzduchu",
+    "PRESSURE_SENSOR_SUP": "Porucha manometru přívodu",
+    "SD_CARD_MISSING": "SD karta chybí",
+    "SECOND_FROST_PROTECTION": "2. mrazová ochrana",
+    "SMOKE_DETECTOR": "Čidlo kouře aktivní",
+    "SMOKE_EXTRACTION_ACTIVE": "Probíhá odsávání kouře",
+    "SMOKE_EXTRACTION_BLOCKED": "Ovládání jednotky blokováno po odsávání kouře",
+    "STOP_SIGNAL": "STOP kontakt",
+    "STOP_SIGNAL_RESETABLE_RESETABLE": "STOP kontakt + potvrzení",
+    "SYSTEM_START": "Start jednotky",
+    "TEMPERATURE_SENSOR_FAULT_EHA": "Porucha čidla teploty odpadního vzduchu",
+    "TEMPERATURE_SENSOR_FAULT_ETA": "Porucha čidla teploty odtahovaného vzduchu",
+    "TEMPERATURE_SENSOR_FAULT_IDA": "Porucha čidla teploty vnitřního vzduchu",
+    "TEMPERATURE_SENSOR_FAULT_MEHA": "Porucha čidla na motoru M-EHA",
+    "TEMPERATURE_SENSOR_FAULT_META": "Porucha čidla na motoru M-ETA",
+    "TEMPERATURE_SENSOR_FAULT_MSUP": "Porucha čidla na motoru M-SUP",
+    "TEMPERATURE_SENSOR_FAULT_ODA": "Porucha čidla teploty venkovního vzduchu",
+    "TEMPERATURE_SENSOR_FAULT_PREH": "Porucha čidla teploty před rekuperátorem",
+    "TEMPERATURE_SENSOR_FAULT_SUP": "Porucha čidla teploty přiváděného vzduchu",
+    "TEMPERATURE_SENSOR_FAULT_T1": "Porucha čidla T1",
+    "TEMPERATURE_SENSOR_FAULT_T1_IZT": "Porucha čidla T1 - IZT",
+    "TEMPERATURE_SENSOR_FAULT_T2": "Porucha čidla T2",
+    "TEMPERATURE_SENSOR_FAULT_T2_IZT": "Porucha čidla T2 - IZT",
+    "TEMPERATURE_SENSOR_FAULT_T3": "Porucha čidla T3",
+    "TEMPERATURE_SENSOR_FAULT_T3_IZT": "Porucha čidla T3 - IZT",
+    "TEMPERATURE_SENSOR_FAULT_T4_IZT": "Porucha čidla T4 - IZT",
+    "TEMPERATURE_SENSOR_FAULT_T5_IZT": "Porucha čidla T5 - IZT",
+    "TEMPERATURE_SENSOR_FAULT_T6_IZT": "Porucha čidla T6 - IZT",
+    "TEMPERATURE_SENSOR_FAULT_T7_SOLAR": "Porucha čidla T7 - IZT",
+    "TEMPERATURE_SENSOR_FAULT_TE2": "Porucha čidla TE2",
+    "TEMPERATURE_SENSOR_FAULT_TM1": "Porucha čidla TM1",
+    "TEMPERATURE_SENSOR_FAULT_TM2": "Porucha čidla TM2",
+    "TEMPERATURE_SENSOR_FAULT_TM3": "Nepoužíváno",
+    "TRIAL_ACK": "Doběhl zkušební provoz",
+    "TRIGGER_FAULT": "Porucha trigru",
+    "UNBALANCED_FLOW": "Nevyrovnaný průtok",
+    "UNECONOMIC_TARIFF": "Vysoký tarif",
+    "UPDATE_PRF_PROGRESS": "Probíhá update periferií",
+    "UPDATE_PROGRESS": "Probíhá update sw",
+    "UVC_INTERVAL": "Interval výměny UV-C lamp",
+    "VAV_BOX_ERROR": "VAVbox - nedosažený průtok",
+    "VAV_MASTER_DISCONNECTED": "VZT jednotka není dostupná",
+    "VAV_STOP_BY_MASTER": "VZT jednotka je zastavena",
+    "VAV_UC_CONNECTED": "Detekován nezařazený VAVbox"
+  }
+}
