@@ -32,10 +32,13 @@ from .identity import device_identity, serial_number
 from .registry_migration import async_migrate_registry
 from .state_messages import hass_language, preload_state_messages, translate_state_message, translation_key_for
 
-MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=15)
-PERIODIC_REFRESH_INTERVAL = 15
-CONTROL_BURST_REFRESH_INTERVAL = 1
-CONTROL_BURST_REFRESH_CYCLES = 20
+MIN_TIME_BETWEEN_UPDATES = timedelta(seconds=60)
+PERIODIC_REFRESH_INTERVAL = 60
+RECONNECT_MAX_INTERVAL = 300
+REDISCOVERY_INTERVAL = 300
+REDISCOVERY_FAILURE_THRESHOLD = 2
+CONTROL_BURST_REFRESH_INTERVAL = 5
+CONTROL_BURST_REFRESH_CYCLES = 2
 STATE_DISPATCH_DEBOUNCE_SECONDS = 1.0
 OPTIONAL_INITIAL_STATE_TIMEOUT = 5
 
@@ -192,6 +195,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await atrea.async_shutdown()
         raise
 
+    atrea.config_entry = entry
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
         "atrea": atrea,
@@ -226,7 +230,7 @@ def _validate_unit_serial(entry_data, coordinator) -> None:
 
 
 async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload the entry when its options change."""
+    """Reload the entry after configuration or options changes."""
     _apply_logger_options(entry)
     await hass.config_entries.async_reload(entry.entry_id)
 
@@ -306,6 +310,13 @@ class AtreaAMotionCoordinator:
         self.ws: websocket.WebSocketApp | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._lock = asyncio.Lock()
+        self._connect_lock = asyncio.Lock()
+        self.config_entry: ConfigEntry | None = None
+        self._connection_failures = 0
+        self._next_connection_attempt_at = 0.0
+        self._next_rediscovery_at = 0.0
+        self._auth_pending = False
+        self._auth_task: asyncio.Task | None = None
         self._pending_requests: dict[int, str] = {}
         self._response_waiters: dict[int, asyncio.Future[dict[str, Any]]] = {}
         self._last_message_at = monotonic()
@@ -391,6 +402,10 @@ class AtreaAMotionCoordinator:
             self._dispatch_handle.cancel()
             self._dispatch_handle = None
         tasks = []
+        if self._auth_task is not None:
+            self._auth_task.cancel()
+            tasks.append(self._auth_task)
+            self._auth_task = None
         if self._refresh_task is not None:
             self._refresh_task.cancel()
             tasks.append(self._refresh_task)
@@ -573,16 +588,57 @@ class AtreaAMotionCoordinator:
             self._refresh_task = asyncio.create_task(self._periodic_refresh_loop())
 
     async def _periodic_refresh_loop(self) -> None:
-        """Keep state fresh even when the unit does not emit push events."""
+        """Poll once a minute and back off while the unit is offline."""
         try:
             while not self._shutdown:
-                await asyncio.sleep(PERIODIC_REFRESH_INTERVAL)
+                delay = max(
+                    PERIODIC_REFRESH_INTERVAL,
+                    self._next_connection_attempt_at - monotonic(),
+                )
+                await asyncio.sleep(delay)
                 if self._shutdown:
                     break
-                await self.async_update()
-                await self.async_request("control_panel")
+                try:
+                    if not await self.connect_wss():
+                        if await self._async_rediscover_host():
+                            # Updating entry.data schedules the existing update
+                            # listener, which reloads on the new host safely.
+                            break
+                        continue
+                    await self.async_update()
+                    await self.async_request("control_panel")
+                except Exception:
+                    LOGGER.exception("Periodic websocket refresh failed; retrying next cycle")
         except asyncio.CancelledError:
             return
+
+    async def _async_rediscover_host(self) -> bool:
+        """Find a new address for the same serial, at most every five minutes."""
+        entry = self.config_entry
+        if (
+            self._shutdown
+            or entry is None
+            or not serial_number(entry.data)
+            or self._connection_failures < REDISCOVERY_FAILURE_THRESHOLD
+            or monotonic() < self._next_rediscovery_at
+        ):
+            return False
+        self._next_rediscovery_at = monotonic() + REDISCOVERY_INTERVAL
+        rediscovered = await async_rediscover_config_entry(self.hass, entry.data)
+        if self._shutdown or rediscovered is None:
+            return False
+        # Validate again before persisting anything. Credentials and unit names
+        # must never authorize changing to a different physical unit.
+        if serial_number(rediscovered) != serial_number(entry.data):
+            return False
+        host = rediscovered.get("ip") or rediscovered.get("source_ip")
+        if not host or host == self.host:
+            return False
+        LOGGER.info("Rediscovered a new address for config entry %s; reloading", entry.entry_id)
+        self.hass.config_entries.async_update_entry(
+            entry, data={**entry.data, CONF_HOST: host}
+        )
+        return True
 
     def _schedule_control_burst_refresh(self) -> None:
         """Refresh rapidly for a short period after a control change."""
@@ -604,38 +660,90 @@ class AtreaAMotionCoordinator:
             return
 
     async def connect_wss(self) -> bool:
-        """Connect and authorize the websocket session."""
-        if self._shutdown:
-            return False
-        if self.socket_state == SOCK_CONNECTED and self._authorized and self._serial_verified:
-            return True
+        """Serialize recovery and throttle all callers while the unit is offline."""
+        async with self._connect_lock:
+            if self._shutdown:
+                return False
+            if self.socket_state == SOCK_CONNECTED and self._authorized and self._serial_verified:
+                return True
+            if monotonic() < self._next_connection_attempt_at:
+                return False
+            connected = False
+            try:
+                connected = await self._async_connect_once()
+                return connected
+            finally:
+                if connected:
+                    self._connection_failures = 0
+                    self._next_connection_attempt_at = 0.0
+                    self._next_rediscovery_at = 0.0
+                elif not self._shutdown:
+                    self._connection_failures += 1
+                    interval = min(
+                        PERIODIC_REFRESH_INTERVAL * 2 ** min(self._connection_failures - 1, 3),
+                        RECONNECT_MAX_INTERVAL,
+                    )
+                    self._next_connection_attempt_at = monotonic() + interval
+                    LOGGER.debug("Connection recovery failed; next attempt in %s seconds", interval)
 
-        if not await self.open_wss_thread():
-            return False
-
-        for attempt in range(WS_RETRY):
-            if self.socket_state == SOCK_CONNECTED:
+    async def _async_connect_once(self) -> bool:
+        """Make one transport/authentication attempt, without immediate retries."""
+        if not self._authorized and not self._auth_pending:
+            self._login_retry = 0
+        if self.socket_state != SOCK_CONNECTED:
+            if not await self.open_wss_thread():
+                return False
+        try:
+            async with asyncio.timeout(WS_RETRY):
+                while self.socket_state != SOCK_CONNECTED:
+                    if self._shutdown or self._thread is None or not self._thread.is_alive():
+                        return False
+                    await asyncio.sleep(1)
+            if not self._authorized:
                 await self.authenticate_with_server()
+            await asyncio.wait_for(self._ready.wait(), timeout=10)
+            if not self._authorized:
+                return False
+            if self.expected_serial and not self._serial_verified:
+                # Requests can hold _lock while connecting. Serial verification
+                # must not reacquire the request lock.
+                self._msg_id += 1
+                message_id = self._msg_id
+                self._pending_requests[message_id] = "discovery"
                 try:
-                    await asyncio.wait_for(self._ready.wait(), timeout=5)
-                    if self.expected_serial and not self._serial_verified:
-                        # publish_wss can be called while _lock is held. Do not
-                        # reacquire it via async_request during authentication.
-                        self._msg_id += 1
-                        self._pending_requests[self._msg_id] = "discovery"
-                        await self.publish_wss({
-                            "endpoint": "discovery", "id": self._msg_id, "args": None
-                        })
-                        await asyncio.wait_for(self._discovery_ready.wait(), timeout=5)
-                    return self._serial_verified
-                except TimeoutError:
-                    LOGGER.debug("Timed out waiting for websocket authorization")
-            LOGGER.debug("Awaiting websocket authorization... %s", attempt)
-            await asyncio.sleep(1)
-        return False
+                    if not await self.publish_wss({
+                        "endpoint": "discovery", "id": message_id, "args": None
+                    }):
+                        return False
+                    await asyncio.wait_for(self._discovery_ready.wait(), timeout=5)
+                finally:
+                    self._pending_requests.pop(message_id, None)
+            return self._authorized and self._serial_verified
+        except TimeoutError:
+            if not self._authorized:
+                self._auth_pending = False
+                self._token = None
+            LOGGER.debug("Timed out waiting for websocket authorization or identity")
+            return False
 
     async def open_wss_thread(self) -> bool:
         """Open the websocket and run it in a background thread."""
+        if self._shutdown:
+            return False
+        if self.socket_state == SOCK_CONNECTED:
+            return True
+        # Never replace an app while its receive thread is still running.
+        if self.ws is not None:
+            await self.hass.async_add_executor_job(self.ws.close)
+        if self._thread is not None and self._thread.is_alive():
+            await self.hass.async_add_executor_job(self._thread.join, 5)
+            if self._thread.is_alive():
+                LOGGER.warning("Previous websocket thread has not stopped; postponing reconnect")
+                return False
+        self._authorized = False
+        self._auth_pending = False
+        self._login_retry = 0
+        self._reset_connection_state_on_loop()
         LOGGER.debug("Opening websocket to %s", self.host)
         try:
             self.ws = websocket.WebSocketApp(
@@ -664,54 +772,54 @@ class AtreaAMotionCoordinator:
 
     async def authenticate_with_server(self) -> None:
         """Authenticate the websocket session."""
+        if self._shutdown or self.socket_state != SOCK_CONNECTED or self._auth_pending:
+            return
         if self._login_retry > 5:
             LOGGER.error("Too many login attempts")
             return
 
+        self._ready.clear()
+        self._authorized = False
+        self._auth_pending = True
         self._msg_id += 1
         if self._token is None:
             self._login_retry += 1
+            self._token_msg_id = None
             self._login_msg_id = self._msg_id
-            await self.publish_wss(
+            sent = await self.publish_wss(
                 {
                     "endpoint": "login",
                     "id": self._login_msg_id,
                     "args": {"username": self.username, "password": self.password},
                 }
             )
+            if not sent:
+                self._auth_pending = False
             return
 
+        self._login_msg_id = None
         self._token_msg_id = self._msg_id
-        await self.publish_wss(
+        sent = await self.publish_wss(
             {
                 "endpoint": "login",
                 "id": self._token_msg_id,
                 "args": {"token": self._token},
             }
         )
+        if not sent:
+            self._auth_pending = False
+
+    def _schedule_authentication(self) -> None:
+        """Track follow-up login work so unload can cancel it."""
+        if not self._shutdown:
+            self._auth_task = asyncio.create_task(self.authenticate_with_server())
 
     async def _async_reauthorize_session(self) -> bool:
-        """Refresh websocket authorization after an unauthorized control reply."""
+        """Reuse the normal connection path after authorization expires."""
         self._authorized = False
+        self._auth_pending = False
         self._ready.clear()
-
-        await self.authenticate_with_server()
-        try:
-            await asyncio.wait_for(self._ready.wait(), timeout=5)
-            return True
-        except TimeoutError:
-            LOGGER.debug("Token reauthorization timed out, requesting a fresh websocket token")
-
-        self._authorized = False
-        self._ready.clear()
-        self._token = None
-        await self.authenticate_with_server()
-        try:
-            await asyncio.wait_for(self._ready.wait(), timeout=5)
-            return True
-        except TimeoutError:
-            LOGGER.warning("Websocket reauthorization failed")
-            return False
+        return await self.connect_wss()
 
     def on_error(self, ws, error) -> None:
         """Socket error event."""
@@ -721,7 +829,7 @@ class AtreaAMotionCoordinator:
         LOGGER.debug("Websocket error %s", details)
         self.socket_state = SOCK_ERROR
         self._authorized = False
-        self._call_on_loop(self._reset_connection_state_on_loop)
+        self._call_on_loop(self._reset_socket_state_on_loop, ws)
 
     def on_close(self, ws, close_status_code, close_msg) -> None:
         """Socket close event."""
@@ -730,7 +838,7 @@ class AtreaAMotionCoordinator:
         LOGGER.debug("Websocket closed: %s %s", close_status_code, close_msg)
         self.socket_state = SOCK_DISCONNECTED
         self._authorized = False
-        if not self._call_on_loop(self._reset_connection_state_on_loop):
+        if not self._call_on_loop(self._reset_socket_state_on_loop, ws):
             self._message_buffer = ""
 
     def _call_on_loop(self, callback, *args) -> bool:
@@ -743,9 +851,17 @@ class AtreaAMotionCoordinator:
             return False
         return True
 
+    def _reset_socket_state_on_loop(self, ws) -> None:
+        """Ignore a queued reset from an already replaced transport."""
+        if ws is None or ws is self.ws:
+            self._reset_connection_state_on_loop()
+
     def _reset_connection_state_on_loop(self) -> None:
         """Clear state that must not leak into another websocket session."""
         self._ready.clear()
+        self._auth_pending = False
+        self._login_msg_id = None
+        self._token_msg_id = None
         self._serial_verified = self.expected_serial is None
         self._discovery_ready.clear()
         self._ui_info_ready.clear()
@@ -759,28 +875,23 @@ class AtreaAMotionCoordinator:
         LOGGER.debug("Websocket pong received")
 
     def on_open(self, ws) -> None:
-        """Socket open event."""
-        if self._shutdown:
+        """Prepare the current transport on the owning event loop."""
+        if self._shutdown or (ws is not None and ws is not self.ws):
             ws.close()
             return
+        self._call_on_loop(self._prepare_new_connection_on_loop, ws)
+
+    @callback
+    def _prepare_new_connection_on_loop(self, ws=None) -> None:
+        """Let connect_wss own authentication; do not start a second login."""
+        if self._shutdown or (ws is not None and ws is not self.ws):
+            return
         LOGGER.debug("Websocket connected")
+        self._reset_connection_state_on_loop()
+        self._authorized = False
         self.socket_state = SOCK_CONNECTED
         self.sent_counter = 0
         self._last_message_at = monotonic()
-        self._call_on_loop(self._prepare_new_connection_on_loop)
-
-    def _prepare_new_connection_on_loop(self) -> None:
-        """Create connection work only while the owning loop is running."""
-        if not self._shutdown:
-            asyncio.create_task(self._async_prepare_new_connection())
-
-    async def _async_prepare_new_connection(self) -> None:
-        """Reset per-connection parsing state and authenticate."""
-        if self._shutdown:
-            return
-        self._message_buffer = ""
-        self._reset_connection_state_on_loop()
-        await self.authenticate_with_server()
 
     def on_message(self, ws, msg: str | bytes) -> None:
         """Socket message event."""
@@ -795,11 +906,11 @@ class AtreaAMotionCoordinator:
         else:
             text = msg
 
-        self._call_on_loop(self._handle_message_text_on_loop, text)
+        self._call_on_loop(self._handle_message_text_on_loop, text, ws)
 
-    def _handle_message_text_on_loop(self, payload: str) -> None:
+    def _handle_message_text_on_loop(self, payload: str, ws=None) -> None:
         """Parse one or more JSON objects from a websocket text payload."""
-        if self._shutdown:
+        if self._shutdown or (ws is not None and ws is not self.ws):
             return
         self._message_buffer += payload
 
@@ -834,21 +945,43 @@ class AtreaAMotionCoordinator:
         if self._shutdown:
             return
         message_id = message.get("id")
-        if message_id == self._login_msg_id and message.get("code") == "OK":
-            self._token = message.get("response")
+        if self._login_msg_id is not None and message_id == self._login_msg_id:
+            self._auth_pending = False
+            self._login_msg_id = None
+            if message.get("code") == "OK":
+                self._token = message.get("response")
+                self._schedule_authentication()
+            else:
+                self._authorized = False
+                self._ready.clear()
+                LOGGER.warning("Websocket credential login failed with code %s", message.get("code"))
             self._resolve_response_waiter(message)
-            asyncio.create_task(self.authenticate_with_server())
             return
 
-        if message_id == self._token_msg_id:
+        if self._token_msg_id is not None and message_id == self._token_msg_id:
+            self._auth_pending = False
+            self._token_msg_id = None
             self._authorized = message.get("code") == "OK"
             if self._authorized:
                 self._login_retry = 0
                 self._ready.set()
+                self._notify_state_changed()
+            else:
+                self._ready.clear()
+                self._token = None
+                LOGGER.debug("Websocket token rejected; requesting a fresh token")
+                self._schedule_authentication()
+                self._notify_state_changed()
             self._resolve_response_waiter(message)
             return
 
         self._resolve_response_waiter(message)
+        if message.get("code") == "UNAUTHORIZED":
+            self._authorized = False
+            self._ready.clear()
+            self._pending_requests.pop(message_id, None)
+            self._notify_state_changed()
+            return
         self._process_message(message)
 
     def _resolve_response_waiter(self, message: dict[str, Any]) -> None:
@@ -1346,51 +1479,43 @@ class AtreaAMotionCoordinator:
         async_dispatcher_send(self.hass, self.update_signal)
 
     async def publish_wss(self, payload: dict[str, Any]) -> bool:
-        """Publish JSON over websocket."""
+        """Publish through one verified transport without recursive login."""
         if self._shutdown:
             return False
-        if (
-            self.expected_serial
-            and not self._serial_verified
-            and payload.get("endpoint") not in {"login", "discovery"}
-        ):
-            if not await self.connect_wss():
-                return False
+        endpoint = payload.get("endpoint")
+        handshake = endpoint in {"login", "discovery"}
         json_message = json.dumps(payload)
         LOGGER.debug("Publishing websocket message: %s", json_message)
 
         if (
-            self.sent_counter >= 5
+            not handshake
+            and self.sent_counter >= 5
             and self.ws is not None
             and monotonic() - self._last_message_at > 30
         ):
             LOGGER.warning("Websocket stopped answering, reconnecting")
             self.sent_counter = 0
-            self.ws.close()
             self.socket_state = SOCK_DISCONNECTED
+            self._authorized = False
+            self._reset_connection_state_on_loop()
+            await self.hass.async_add_executor_job(self.ws.close)
 
-        for attempt in range(N_RETRY):
-            # A reconnect inside this publish can invalidate an earlier serial
-            # check. Never send the queued command to an unverified session.
-            if (
-                self.expected_serial
-                and not self._serial_verified
-                and payload.get("endpoint") not in {"login", "discovery"}
-            ):
-                if not await self.connect_wss():
-                    return False
+        for attempt in range(1 if handshake else N_RETRY):
+            if self._shutdown:
+                return False
+            # Login and discovery are sent by connect_wss while its lock is
+            # held. They must never recurse back into the connection path.
+            if not handshake and not await self.connect_wss():
+                return False
             if self.socket_state == SOCK_CONNECTED and self.ws is not None:
                 try:
                     await self.hass.async_add_executor_job(self.ws.send, json_message)
                     self.sent_counter += 1
                     return True
-                except websocket.WebSocketConnectionClosedException as err:
+                except (websocket.WebSocketException, OSError) as err:
                     self.socket_state = SOCK_DISCONNECTED
+                    self._authorized = False
+                    self._reset_connection_state_on_loop()
                     LOGGER.debug("Websocket send error: %s", err)
-            else:
-                await self.connect_wss()
-
             LOGGER.debug("Retrying websocket publish, attempt %s", attempt)
-
-        LOGGER.error("Failed to publish websocket message after %s retries", N_RETRY)
         return False

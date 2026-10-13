@@ -15,6 +15,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME, PERCENTAGE, UnitOfTemperature
+from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityCategory
@@ -365,9 +366,10 @@ class AtreaAMotionSensor(AtreaAvailability, SensorEntity):
         if self._unsubscribe is not None:
             self._unsubscribe()
 
+    @callback
     def _handle_coordinator_update(self) -> None:
         """Update HA state from coordinator."""
-        self.schedule_update_ha_state()
+        self.async_write_ha_state()
 
     @property
     def native_value(self) -> float | int | str | date | None:

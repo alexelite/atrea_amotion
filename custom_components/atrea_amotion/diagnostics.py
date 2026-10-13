@@ -58,6 +58,18 @@ async def async_get_config_entry_diagnostics(
         "runtime": {
             "socket_state": coordinator.socket_state,
             "authorized": coordinator._authorized,
+            "available": coordinator.available,
+            "serial_verified": coordinator._serial_verified,
+            "authentication_pending": coordinator._auth_pending,
+            "connection_failures": coordinator._connection_failures,
+            "transport_thread_alive": coordinator._thread is not None and coordinator._thread.is_alive(),
+            "refresh_task_running": coordinator._refresh_task is not None and not coordinator._refresh_task.done(),
+            "ready": {
+                "discovery": coordinator._discovery_ready.is_set(),
+                "live": coordinator._ui_info_ready.is_set(),
+                "diagram": coordinator._diagram_ready.is_set(),
+                "maintenance": coordinator._moments_ready.is_set(),
+            },
             "model": coordinator.model,
             "version": coordinator.version,
             "board_type": coordinator.board_type,

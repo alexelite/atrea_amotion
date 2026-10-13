@@ -64,6 +64,24 @@ If nothing is discovered, you can still continue by entering the host manually. 
 
 The integration connects directly to the unit over the local network.
 
+## Data updates and connection recovery
+
+The integration receives live events over the local websocket and polls once
+per minute to refresh values that are not pushed by the unit. After a control
+change it requests immediate readback and two follow-up refreshes five seconds
+apart.
+
+While a unit is offline, reconnect attempts wait 60, 120, 240, then at most 300
+seconds after failed attempts complete. Commands share the same recovery limit;
+they do not start additional reconnect attempts during the waiting period.
+
+After two failed connection attempts, the integration also searches for the unit
+through UDP discovery, at most once every five minutes. A changed address is
+accepted only for the configured production serial. The address is saved and
+Home Assistant automatically reloads that entry, preserving device and entity
+references. Discovery requires UDP broadcast connectivity to the unit. Units
+without a saved serial continue reconnecting to their configured address.
+
 ## Status
 
 This project is actively evolving.
