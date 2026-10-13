@@ -9,7 +9,7 @@ from homeassistant.components.climate import ClimateEntity, ClimateEntityFeature
 from homeassistant.components.climate.const import HVACAction
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, CONF_NAME, UnitOfTemperature
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.util import dt as dt_util
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
@@ -138,9 +138,10 @@ class AtreaAMotionClimate(AtreaAvailability, ClimateEntity):
         if self._unsubscribe is not None:
             self._unsubscribe()
 
+    @callback
     def _handle_coordinator_update(self) -> None:
         """Update entity state."""
-        self.schedule_update_ha_state()
+        self.async_write_ha_state()
 
     @property
     def temperature_unit(self) -> str:

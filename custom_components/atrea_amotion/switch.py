@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from homeassistant.components.switch import SwitchEntity, SwitchEntityDescription
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
+from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -88,9 +89,10 @@ class AtreaToggleSwitch(AtreaAvailability, SwitchEntity):
         if self._unsubscribe is not None:
             self._unsubscribe()
 
+    @callback
     def _handle_coordinator_update(self) -> None:
         """Update state."""
-        self.schedule_update_ha_state()
+        self.async_write_ha_state()
 
     @property
     def is_on(self) -> bool:

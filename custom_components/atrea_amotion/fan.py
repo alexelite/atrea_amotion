@@ -7,7 +7,7 @@ from typing import Any
 from homeassistant.components.fan import FanEntity, FanEntityFeature
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_NAME
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -78,9 +78,10 @@ class AtreaAMotionFan(AtreaAvailability, FanEntity):
         if self._unsubscribe is not None:
             self._unsubscribe()
 
+    @callback
     def _handle_coordinator_update(self) -> None:
         """Write updated state to Home Assistant."""
-        self.schedule_update_ha_state()
+        self.async_write_ha_state()
 
     @staticmethod
     def _coerce_percentage(value: Any) -> int | None:

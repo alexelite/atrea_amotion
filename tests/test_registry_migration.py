@@ -177,11 +177,53 @@ async def test_full_setup_and_reload_reuse_original_and_duplicate_records(hass, 
             assert entity_registry.async_get(record.entity_id).device_id == record.device_id
         assert len(device_registry.devices) == expected_devices
         count = len(entity_registry.entities)
+        coordinator = hass.data[DOMAIN][entry.entry_id]["atrea"]
+        coordinator._apply_ui_info({"unit": {"temp_oda": 17.5}})
+        await hass.async_block_till_done()
+        for record in records:
+            assert hass.states.get(record.entity_id).state == "17.5"
         assert await hass.config_entries.async_reload(entry.entry_id)
         await hass.async_block_till_done()
         assert len(device_registry.devices) == expected_devices
         assert len(entity_registry.entities) == count
         for record in records:
             assert hass.states.get(record.entity_id).state == "16.5"
+        assert await hass.config_entries.async_unload(entry.entry_id)
+        await hass.async_block_till_done()
+
+
+async def test_runtime_address_recovery_reloads_without_changing_references(hass, MockConfigEntry, device_registry, entity_registry):
+    """An address change must recover automatically through HA's update listener."""
+    entry = entry_for(hass, MockConfigEntry)
+    hass.config_entries.async_update_entry(entry, data={**entry.data, CONF_USERNAME: "user", CONF_PASSWORD: "pass"})
+    device = device_for(device_registry, entry, "production:SN-1")
+    record = entity_for(entity_registry, entry, device, "production:SN-1")
+
+    async def initialize(coordinator):
+        coordinator.state.discovery["production_number"] = "SN-1"
+        coordinator._serial_verified = True
+        coordinator.socket_state = "Open"
+        coordinator._authorized = True
+        coordinator.capabilities.unit_fields = {"temp_oda"}
+        coordinator._apply_ui_info({"unit": {"temp_oda": 16.5}})
+        coordinator._apply_ui_diagram_data({})
+        coordinator._apply_moments({})
+
+    with patch("custom_components.atrea_amotion.AtreaAMotionCoordinator.async_initialize", initialize):
+        assert await hass.config_entries.async_setup(entry.entry_id)
+        await hass.async_block_till_done()
+        old = hass.data[DOMAIN][entry.entry_id]["atrea"]
+        old._connection_failures = 2
+        with patch("custom_components.atrea_amotion.async_rediscover_config_entry", AsyncMock(return_value={"production_number": "SN-1", "ip": "192.0.2.20"})):
+            assert await old._async_rediscover_host()
+            await hass.async_block_till_done()
+        new = hass.data[DOMAIN][entry.entry_id]["atrea"]
+        assert new is not old
+        assert old._shutdown
+        assert new.host == entry.data[CONF_HOST] == "192.0.2.20"
+        assert len(device_registry.devices) == 1
+        assert entity_registry.async_get(record.entity_id).id == record.id
+        assert entity_registry.async_get(record.entity_id).device_id == device.id
+        assert hass.states.get(record.entity_id).state == "16.5"
         assert await hass.config_entries.async_unload(entry.entry_id)
         await hass.async_block_till_done()

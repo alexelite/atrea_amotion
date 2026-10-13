@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import asyncio
 
 from custom_components.atrea_amotion.diagnostics import async_get_config_entry_diagnostics
 from custom_components.atrea_amotion.const import CONF_DEBUG_LOGGING, DOMAIN
@@ -36,6 +37,16 @@ class _MockState:
 class _MockCoordinator:
     socket_state = "Open"
     _authorized = True
+    available = True
+    _serial_verified = True
+    _auth_pending = False
+    _connection_failures = 0
+    _thread = None
+    _refresh_task = None
+    _discovery_ready = asyncio.Event()
+    _ui_info_ready = asyncio.Event()
+    _diagram_ready = asyncio.Event()
+    _moments_ready = asyncio.Event()
     model = "aMotion"
     version = "1.0.0"
     board_type = "CE"
@@ -74,3 +85,6 @@ async def test_diagnostics_redacts_sensitive_values(hass, MockConfigEntry) -> No
     assert diagnostics["entry"]["data"]["network_mac"] == "**REDACTED**"
     assert diagnostics["state"]["discovery"]["board_number"] == "**REDACTED**"
     assert diagnostics["runtime"]["authorized"] is True
+
+    assert diagnostics["runtime"]["serial_verified"] is True
+    assert diagnostics["runtime"]["transport_thread_alive"] is False

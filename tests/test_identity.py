@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from homeassistant.const import CONF_HOST, CONF_NAME
+from homeassistant.core import is_callback
 
 from custom_components.atrea_amotion import AtreaAMotionCoordinator
 from custom_components.atrea_amotion.button import AtreaFilterResetButton, AtreaRebootButton
@@ -36,6 +37,7 @@ def test_all_platforms_keep_identity_when_ip_and_name_change(hass, MockConfigEnt
     for host, name in [("192.0.2.10", "Original"), ("192.0.2.20", "Renamed")]:
         entry = MockConfigEntry(domain=DOMAIN, data={CONF_NAME: name, CONF_HOST: host, "production_number": "SN-1"})
         entities.append(factory(coordinator, entry, name))
+    assert is_callback(entities[0]._handle_coordinator_update)
     assert entities[0].unique_id == entities[1].unique_id
     assert entities[0].device_info["identifiers"] == {(DOMAIN, "production:SN-1")}
     assert entities[1].device_info["identifiers"] == entities[0].device_info["identifiers"]
