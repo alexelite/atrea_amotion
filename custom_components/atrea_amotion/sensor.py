@@ -80,7 +80,7 @@ class AtreaSensorDescription(SensorEntityDescription):
 ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     AtreaSensorDescription(
         key="outside_temperature",
-        name="Outside air",
+        translation_key="outside_temperature",
         icon="mdi:thermometer",
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -89,7 +89,7 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="outside_temperature_mean",
-        name="Outside air mean",
+        translation_key="outside_temperature_mean",
         icon="mdi:thermometer",
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -98,7 +98,7 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="inside_temperature",
-        name="Inside air",
+        translation_key="inside_temperature",
         icon="mdi:thermometer",
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -107,7 +107,7 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="exhaust_temperature",
-        name="Exhaust air",
+        translation_key="exhaust_temperature",
         icon="mdi:thermometer",
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -116,7 +116,7 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="supply_temperature",
-        name="Supply air",
+        translation_key="supply_temperature",
         icon="mdi:thermometer",
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -125,7 +125,7 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="extract_temperature",
-        name="Extract air",
+        translation_key="extract_temperature",
         icon="mdi:thermometer",
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -134,7 +134,7 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="fan_eta_requested",
-        name="Extract fan requested speed",
+        translation_key="fan_eta_requested",
         icon="mdi:fan-chevron-down",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -143,7 +143,7 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="fan_sup_requested",
-        name="Supply fan requested speed",
+        translation_key="fan_sup_requested",
         icon="mdi:fan-chevron-up",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -152,7 +152,7 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="fan_requested",
-        name="Ventilation fan requested speed",
+        translation_key="fan_requested",
         icon="mdi:fan-plus",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -161,7 +161,7 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="fan_eta_factor",
-        name="Extract fan factor",
+        translation_key="fan_eta_factor",
         icon="mdi:fan",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -169,7 +169,7 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="fan_sup_factor",
-        name="Supply fan factor",
+        translation_key="fan_sup_factor",
         icon="mdi:fan",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -177,7 +177,7 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="bypass_estim",
-        name="Bypass estimation",
+        translation_key="bypass_estim",
         icon="mdi:pipe-valve",
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -185,13 +185,13 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="damper_io_state",
-        name="Damper state",
+        translation_key="damper_io_state",
         icon="mdi:door-sliding",
         value_key="damper_io_state",
     ),
     AtreaSensorDescription(
         key="fan_eta_operating_time",
-        name="Extract fan operating time",
+        translation_key="fan_eta_operating_time",
         icon="mdi:timer-outline",
         native_unit_of_measurement="h",
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -199,7 +199,7 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="fan_sup_operating_time",
-        name="Supply fan operating time",
+        translation_key="fan_sup_operating_time",
         icon="mdi:timer-outline",
         native_unit_of_measurement="h",
         state_class=SensorStateClass.TOTAL_INCREASING,
@@ -207,17 +207,17 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="season_current",
-        name="Current season",
+        translation_key="season_current",
         value_key="season_current",
     ),
     AtreaSensorDescription(
         key="mode_current",
-        name="Current mode",
+        translation_key="mode_current",
         value_key="mode_current",
     ),
     AtreaSensorDescription(
         key="active_state_count",
-        name="Active state count",
+        translation_key="active_state_count",
         icon="mdi:alert-outline",
         state_class=SensorStateClass.MEASUREMENT,
         value_key="active_state_count",
@@ -231,34 +231,34 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="filter_interval_active",
-        name="Filter interval active",
+        translation_key="filter_interval_active",
         icon="mdi:air-filter",
         value_key="filter_interval_active",
     ),
     AtreaSensorDescription(
         key="filter_due_date",
-        name="Filter service due",
+        translation_key="filter_due_date",
         icon="mdi:calendar-alert",
         device_class=SensorDeviceClass.DATE,
         value_key="filter_due_date",
     ),
     AtreaSensorDescription(
         key="last_filter_reset",
-        name="Last filter replacement",
+        translation_key="last_filter_reset",
         icon="mdi:calendar-check",
         device_class=SensorDeviceClass.DATE,
         value_key="last_filter_reset",
     ),
     AtreaSensorDescription(
         key="filter_service_days_remaining",
-        name="Filter service days remaining",
+        translation_key="filter_service_days_remaining",
         icon="mdi:calendar-clock",
         state_class=SensorStateClass.MEASUREMENT,
         value_key="filter_due_date",
     ),
     AtreaSensorDescription(
         key="m1_register",
-        name="Motor 1 operating time",
+        translation_key="m1_register",
         icon="mdi:timer-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
@@ -268,7 +268,7 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="m2_register",
-        name="Motor 2 operating time",
+        translation_key="m2_register",
         icon="mdi:timer-outline",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
@@ -278,7 +278,7 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="motor_role_mapping",
-        name="Motor role mapping",
+        translation_key="motor_role_mapping",
         icon="mdi:swap-horizontal",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
@@ -286,14 +286,14 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
     ),
     AtreaSensorDescription(
         key="uv_lamp_register",
-        name="UV lamp register",
+        translation_key="uv_lamp_register",
         icon="mdi:lightbulb",
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_key="uv_lamp_register",
     ),
     AtreaSensorDescription(
         key="uv_lamp_service_life",
-        name="UV lamp service life",
+        translation_key="uv_lamp_service_life",
         icon="mdi:lightbulb-on-outline",
         native_unit_of_measurement="h",
         state_class=SensorStateClass.MEASUREMENT,

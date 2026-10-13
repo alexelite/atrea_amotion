@@ -53,9 +53,9 @@ async def test_buttons_are_created_and_call_actions(hass, MockConfigEntry) -> No
 
     assert len(added_entities) == 2
 
-    reboot_button = next(entity for entity in added_entities if entity.name == "Reboot unit")
+    reboot_button = next(entity for entity in added_entities if entity.translation_key == "reboot")
     filter_button = next(
-        entity for entity in added_entities if entity.name == "Confirm filter replacement"
+        entity for entity in added_entities if entity.translation_key == "reset_filter"
     )
 
     await reboot_button.async_press()

@@ -35,7 +35,7 @@ class AtreaUnitNameText(AtreaAvailability, TextEntity):
 
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.CONFIG
-    _attr_name = "Unit name"
+    _attr_translation_key = "unit_name"
     _attr_native_min = 1
     _attr_native_max = 64
     _attr_mode = "text"

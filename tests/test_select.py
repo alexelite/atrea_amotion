@@ -132,10 +132,10 @@ async def test_config_selects_use_friendly_labels(hass, MockConfigEntry) -> None
 
     await async_setup_entry(hass, entry, _async_add_entities)
 
-    entity_by_name = {entity.name: entity for entity in added_entities}
+    entity_by_key = {entity.translation_key: entity for entity in added_entities}
 
-    season = entity_by_name["Season settings"]
-    interval = entity_by_name["T-ODA averaging time slot"]
+    season = entity_by_key["season_request"]
+    interval = entity_by_key["temp_oda_mean_interval"]
 
     assert season.current_option == "Outdoor temp. mean"
     assert interval.current_option == "3 hours"

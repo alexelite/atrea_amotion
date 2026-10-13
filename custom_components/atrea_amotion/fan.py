@@ -16,9 +16,9 @@ from .identity import AtreaAvailability, device_identity, device_info
 from .registry_migration import with_compatibility_aliases
 
 FAN_VARIABLES = (
-    ("fan_power_req_sup", "Supply fan"),
-    ("fan_power_req_eta", "Extract fan"),
-    ("fan_power_req", "Ventilation fan"),
+    ("fan_power_req_sup", "supply_fan"),
+    ("fan_power_req_eta", "extract_fan"),
+    ("fan_power_req", "ventilation_fan"),
 )
 
 
@@ -33,10 +33,10 @@ async def async_setup_entry(
     sensor_name = entry.data.get(CONF_NAME) or "aatrea"
 
     entities: list[AtreaAMotionFan] = []
-    for variable, label in FAN_VARIABLES:
+    for variable, translation_key in FAN_VARIABLES:
         if variable not in coordinator.async_capabilities().requests:
             continue
-        entities.append(AtreaAMotionFan(coordinator, entry, sensor_name, variable, label))
+        entities.append(AtreaAMotionFan(coordinator, entry, sensor_name, variable, translation_key))
 
     async_add_entities(entities)
 
@@ -57,13 +57,13 @@ class AtreaAMotionFan(AtreaAvailability, FanEntity):
         entry: ConfigEntry,
         sensor_name: str,
         request_key: str,
-        label: str,
+        translation_key: str,
     ) -> None:
         self.coordinator = coordinator
         self.request_key = request_key
         self.factor_key = request_key.replace("power_req", "factor")
         self._attr_unique_id = f"{device_identity(entry)}-{request_key}"
-        self._attr_name = label
+        self._attr_translation_key = translation_key
         self._attr_device_info = device_info(entry, coordinator, sensor_name)
         self._unsubscribe = None
 

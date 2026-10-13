@@ -15,12 +15,12 @@ from .identity import AtreaAvailability, device_identity, device_info
 from .registry_migration import with_compatibility_aliases
 
 
-CONFIG_NUMBERS = {
-    "season_switch_temp": "Season switch temperature",
-    "temp_ida_heater_hyst": "T-IDA hysteresis for heating",
-    "temp_ida_cooler_hyst": "T-IDA hysteresis for cooling",
-    "temp_cool_active_offset": "Temperature offset for cooler activation",
-}
+CONFIG_NUMBERS = (
+    "season_switch_temp",
+    "temp_ida_heater_hyst",
+    "temp_ida_cooler_hyst",
+    "temp_cool_active_offset",
+)
 
 
 async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> None:
@@ -29,8 +29,8 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities: AddEnt
     coordinator = hass.data[DOMAIN][entry.entry_id]["atrea"]
     sensor_name = entry.data.get(CONF_NAME) or "aatrea"
     entities = [
-        AtreaConfigNumber(coordinator, entry, sensor_name, key, name)
-        for key, name in CONFIG_NUMBERS.items()
+        AtreaConfigNumber(coordinator, entry, sensor_name, key, key)
+        for key in CONFIG_NUMBERS
         if key in coordinator.async_capabilities().config_fields
     ]
     if entities:
@@ -51,13 +51,13 @@ class AtreaConfigNumber(AtreaAvailability, NumberEntity):
         entry: ConfigEntry,
         sensor_name: str,
         key: str,
-        name: str,
+        translation_key: str,
     ) -> None:
         self.coordinator = coordinator
         self._key = key
         range_meta = coordinator.async_capabilities().range_for(key)
         self._attr_unique_id = f"{device_identity(entry)}-{key}"
-        self._attr_name = name
+        self._attr_translation_key = translation_key
         self._attr_native_min_value = range_meta.get("min")
         self._attr_native_max_value = range_meta.get("max")
         self._attr_native_step = range_meta.get("step")
