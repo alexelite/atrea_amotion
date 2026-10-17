@@ -39,7 +39,7 @@ class AtreaFilterResetButton(AtreaAvailability, ButtonEntity):
     def __init__(self, coordinator, entry: ConfigEntry, sensor_name: str) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{device_identity(entry)}-reset-filter"
-        self._attr_name = "Confirm filter replacement"
+        self._attr_translation_key = "reset_filter"
         self._attr_icon = "mdi:air-filter"
         self._attr_device_info = device_info(entry, coordinator, sensor_name)
         self._unsubscribe = None
@@ -74,7 +74,7 @@ class AtreaRebootButton(AtreaAvailability, ButtonEntity):
     def __init__(self, coordinator, entry: ConfigEntry, sensor_name: str) -> None:
         self.coordinator = coordinator
         self._attr_unique_id = f"{device_identity(entry)}-reboot"
-        self._attr_name = "Reboot unit"
+        self._attr_translation_key = "reboot"
         self._attr_icon = "mdi:restart-alert"
         self._attr_device_info = device_info(entry, coordinator, sensor_name)
         self._attr_extra_state_attributes = {

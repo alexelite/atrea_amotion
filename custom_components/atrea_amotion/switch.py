@@ -28,14 +28,14 @@ class AtreaSwitchDescription(SwitchEntityDescription):
 ATREA_SWITCHES: tuple[AtreaSwitchDescription, ...] = (
     AtreaSwitchDescription(
         key="modbus_enabled",
-        name="Modbus TCP",
+        translation_key="modbus_enabled",
         icon="mdi:transit-connection-variant",
         value_key="modbus_enabled",
         setter="async_set_modbus_enabled",
     ),
     AtreaSwitchDescription(
         key="autoupdate_enabled",
-        name="Firmware auto update",
+        translation_key="autoupdate_enabled",
         icon="mdi:package-up",
         value_key="autoupdate_enabled",
         setter="async_set_autoupdate_enabled",
@@ -73,7 +73,6 @@ class AtreaToggleSwitch(AtreaAvailability, SwitchEntity):
         self.coordinator = coordinator
         self.entity_description = description
         self._attr_unique_id = f"{device_identity(entry)}-{description.key}"
-        self._attr_name = description.name
         self._attr_icon = description.icon
         self._attr_device_info = device_info(entry, coordinator, sensor_name)
         self._unsubscribe = None
