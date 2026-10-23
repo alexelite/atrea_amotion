@@ -63,6 +63,9 @@
       }
     },
     "number": {
+      "flow_ventilation_req": {
+        "name": "Requested ventilation airflow"
+      },
       "season_switch_temp": {
         "name": "Season switch temperature"
       },

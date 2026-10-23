@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from homeassistant.components.number import NumberDeviceClass, NumberEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME, UnitOfTemperature
+from homeassistant.const import CONF_NAME, UnitOfTemperature, UnitOfVolumeFlowRate
 from homeassistant.core import callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import EntityCategory
@@ -33,6 +33,9 @@ async def async_setup_entry(hass, entry: ConfigEntry, async_add_entities: AddEnt
         for key in CONFIG_NUMBERS
         if key in coordinator.async_capabilities().config_fields
     ]
+    # Units controlled by airflow (m³/h) rather than fan power (%) expose this request instead.
+    if "flow_ventilation_req" in coordinator.async_capabilities().requests:
+        entities.append(AtreaFlowRequestNumber(coordinator, entry, sensor_name, "flow_ventilation_req"))
     if entities:
         async_add_entities(entities)
 
@@ -91,3 +94,26 @@ class AtreaConfigNumber(AtreaAvailability, NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         """Set config value."""
         await self.coordinator.async_set_config(self._key, float(value))
+
+
+class AtreaFlowRequestNumber(AtreaConfigNumber):
+    """Requested ventilation airflow, for units controlled in m³/h."""
+
+    _attr_entity_category = None
+    _attr_native_unit_of_measurement = UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR
+    _attr_device_class = NumberDeviceClass.VOLUME_FLOW_RATE
+
+    def __init__(self, coordinator, entry: ConfigEntry, sensor_name: str, key: str) -> None:
+        super().__init__(coordinator, entry, sensor_name, key, key)
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the requested airflow."""
+        value = self.coordinator.requested_value(self._key)
+        if value is None:
+            return None
+        return float(value)
+
+    async def async_set_native_value(self, value: float) -> None:
+        """Request a new airflow."""
+        await self.coordinator.async_control({self._key: int(value)})
