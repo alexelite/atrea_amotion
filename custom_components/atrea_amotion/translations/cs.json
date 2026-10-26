@@ -63,6 +63,9 @@
       }
     },
     "number": {
+      "flow_ventilation_req": {
+        "name": "Požadovaný výkon větrání"
+      },
       "season_switch_temp": {
         "name": "Teplota přepnutí sezóny"
       },
