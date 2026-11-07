@@ -1,12 +1,19 @@
 {
-  "codeowners": ["alexelite"],
+  "domain": "atrea_amotion",
+  "name": "Atrea aMotion",
+  "codeowners": [
+    "@alexelite"
+  ],
   "config_flow": true,
   "dependencies": [],
   "documentation": "https://github.com/alexelite/atrea_amotion/",
-  "domain": "atrea_amotion",
   "integration_type": "device",
   "iot_class": "local_polling",
-  "name": "Atrea aMotion",
-  "requirements": ["websocket-client","rel","msgpack"],
-  "version": "1.2.1"
+  "issue_tracker": "https://github.com/alexelite/atrea_amotion/issues",
+  "requirements": [
+    "websocket-client",
+    "rel",
+    "msgpack"
+  ],
+  "version": "1.2.2"
 }

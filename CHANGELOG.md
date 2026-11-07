@@ -1,13 +1,30 @@
 # Changelog
 
-## Unreleased
+## 1.2.2 — 2026-11-07
+
+### Added
+
+- Add a requested ventilation airflow number entity for units controlled in m³/h.
+- Add Czech translations and translation keys for entity names.
+
+### Maintenance
+
+- Add HACS and hassfest validation on pushes, pull requests, and a daily schedule.
+- Add the issue tracker URL and correct the code owner handle in the manifest.
+- Remove the unsupported `iot_class` setting from `hacs.json`; the integration
+  manifest continues to declare local polling.
+- Keep protocol notification translations in separate resource files so Home
+  Assistant translation validation accepts the integration without changing
+  notification messages or language fallback.
 
 ### Changed
 
+- Document Marketplace installation and add direct Marketplace and HACS install
+  buttons, retaining instructions for older Home Assistant versions.
 - Use the official aMotion branding for the integration instead of the general
   Atrea branding, making the supported control system easier to identify.
 - Provide local brand icons at 256 × 256 and 512 × 512 pixels for Home Assistant
   2026.3 and newer. The square aMotion icon also serves as the integration logo.
 
-This is a visual update only; configuration, entities, and device control are
-unchanged.
+Existing configuration is preserved. The branding and validation changes do not
+change existing entity identifiers or device control behavior.

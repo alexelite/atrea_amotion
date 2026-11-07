@@ -189,8 +189,5 @@
         "name": "Unit name"
       }
     }
-  },
-  "state_messages": {
-    "FILTER_INTERVAL": "Filter replacement interval"
   }
 }

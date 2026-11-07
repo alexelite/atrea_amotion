@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_LANGUAGE = "en"
-_TRANSLATIONS_DIR = Path(__file__).parent / "translations"
+_TRANSLATIONS_DIR = Path(__file__).parent / "state_translations"
 _SECTION = "state_messages"
 
 

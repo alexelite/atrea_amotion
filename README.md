@@ -33,14 +33,35 @@ For units like the currently tested Elementary aM-CE board, the intended entity 
 - a `select` entity for bypass mode when bypass control is exposed
 - `sensor` entities for telemetry and active states
 
+<!-- ha-marketplace:exclude-start -->
+
 ## Installation
 
-### HACS
+### Marketplace (Home Assistant 2026.11 and newer)
+
+Marketplace is built into Home Assistant under `Settings` -> `Marketplace`.
+Use the button below to open this repository in your Home Assistant instance:
+
+[![Open in Home Assistant Marketplace](https://my.home-assistant.io/badges/marketplace_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=alexelite&repository=atrea_amotion&category=integration)
+
+1. Click the button and select your Home Assistant instance.
+2. If prompted, connect GitHub and add `alexelite/atrea_amotion` as a custom
+   repository with category `Integration`.
+3. Install `Atrea aMotion` and follow any restart prompt from Home Assistant.
+4. Go to `Settings` -> `Devices & services` -> `Add integration`, search for
+   `Atrea aMotion`, and configure your unit.
+
+The button can add this as a custom repository even before it is listed in the
+public Marketplace catalog.
+
+### HACS (Home Assistant versions before 2026.11)
+
+[![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=alexelite&repository=atrea_amotion&category=integration)
 
 1. Open HACS in Home Assistant.
 2. Go to `Integrations`.
 3. Open the menu and choose `Custom repositories`.
-4. Add this GitHub repository as an `Integration`.
+4. Add `https://github.com/alexelite/atrea_amotion` as an `Integration`.
 5. Search for `Atrea aMotion`.
 6. Install it.
 7. Restart Home Assistant.
@@ -51,6 +72,8 @@ For units like the currently tested Elementary aM-CE board, the intended entity 
 1. Copy `custom_components/atrea_amotion` into your Home Assistant `custom_components` directory.
 2. Restart Home Assistant.
 3. Add the integration from `Settings` -> `Devices & services`.
+
+<!-- ha-marketplace:exclude-end -->
 
 ## Configuration
 
@@ -159,7 +182,7 @@ ui_info.states.active
         +
 ui_diagram_scheme.baseStates
         +
-translations/en.json state_messages
+state_translations/en.json state_messages
         ↓
 normalized notifications payload
 ```
