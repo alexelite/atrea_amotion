@@ -217,6 +217,8 @@ The dedicated Lovelace card is expected to consume that normalized payload direc
 
 ## Attribution
 
+This project is licensed under [GPL-3.0](LICENSE).
+
 This integration was inspired by and originally derived from the work of `@xbezdick` on an earlier aMotion Atrea integration.
 
 That earlier work helped establish the initial Home Assistant support path for aMotion units. This project continues from that starting point but expands the design toward a broader multi-platform model, because the aMotion system exposes much more than a single `climate` abstraction can comfortably represent.

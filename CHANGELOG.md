@@ -9,6 +9,7 @@
 
 ### Maintenance
 
+- Add the GPL-3.0 license, retaining attribution to the original project.
 - Add HACS and hassfest validation on pushes, pull requests, and a daily schedule.
 - Add the issue tracker URL and correct the code owner handle in the manifest.
 - Remove the unsupported `iot_class` setting from `hacs.json`; the integration
