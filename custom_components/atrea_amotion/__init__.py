@@ -899,7 +899,6 @@ class AtreaAMotionCoordinator:
             return
         self.sent_counter = 0
         self._last_message_at = monotonic()
-        LOGGER.debug("Received websocket message: %s", msg)
 
         if isinstance(msg, bytes):
             text = msg.decode("utf-8", errors="ignore")
@@ -926,7 +925,7 @@ class AtreaAMotionCoordinator:
                 # Keep partial payloads buffered and recover from obvious garbage prefixes.
                 next_object = self._message_buffer.find("{", 1)
                 if next_object > 0 and err.pos == 0:
-                    LOGGER.debug("Dropping undecodable websocket prefix: %r", self._message_buffer[:next_object])
+                    LOGGER.debug("Dropping undecodable websocket prefix")
                     self._message_buffer = self._message_buffer[next_object:]
                     continue
                 if len(self._message_buffer) > 65536:
@@ -938,12 +937,19 @@ class AtreaAMotionCoordinator:
             if isinstance(message, dict):
                 self._handle_message_on_loop(message)
             else:
-                LOGGER.debug("Ignoring non-object websocket payload: %r", message)
+                LOGGER.debug("Ignoring non-object websocket payload")
 
     def _handle_message_on_loop(self, message: dict[str, Any]) -> None:
         """Handle websocket messages on the HA event loop."""
         if self._shutdown:
             return
+        # Login replies can carry a bare session token in response. Log only
+        # metadata, after decoding complete messages, never raw frames or payloads.
+        LOGGER.debug(
+            "Received websocket message: endpoint=%s id=%s",
+            message.get("endpoint"),
+            message.get("id"),
+        )
         message_id = message.get("id")
         if self._login_msg_id is not None and message_id == self._login_msg_id:
             self._auth_pending = False
@@ -1485,7 +1491,11 @@ class AtreaAMotionCoordinator:
         endpoint = payload.get("endpoint")
         handshake = endpoint in {"login", "discovery"}
         json_message = json.dumps(payload)
-        LOGGER.debug("Publishing websocket message: %s", json_message)
+        LOGGER.debug(
+            "Publishing websocket message: endpoint=%s id=%s",
+            endpoint,
+            payload.get("id"),
+        )
 
         if (
             not handshake

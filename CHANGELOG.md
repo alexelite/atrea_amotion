@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.2.3 — 2026-11-10
+
+### Fixed
+
+- Prevent websocket debug logs from exposing login credentials and session tokens.
+  Log only message endpoints and IDs, and omit raw undecodable or non-object
+  payloads so fragmented authentication replies are safe to log as well.
+- Stop logging raw UDP discovery packets, MAC addresses and production
+  numbers in discovery debug logs.
+
 ## 1.2.2 — 2026-11-07
 
 ### Added

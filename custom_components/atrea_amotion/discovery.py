@@ -233,6 +233,14 @@ def parse_discovery_response(
     return device
 
 
+_LOGGABLE_DEVICE_FIELDS = ("ip", "board_type", "brand", "name", "type", "version")
+
+
+def _loggable_device(device: Mapping[str, Any]) -> dict[str, Any]:
+    """Return device fields that are safe to log (no MAC or serial numbers)."""
+    return {field: device.get(field) for field in _LOGGABLE_DEVICE_FIELDS}
+
+
 def _deduplicate_devices(devices: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Deduplicate responses by board number with IP fallback."""
     deduplicated: dict[str, dict[str, Any]] = {}
@@ -328,15 +336,15 @@ async def async_discover_devices(
     parsed_devices: list[dict[str, Any]] = []
     for payload, source, seen in protocol.responses:
         LOGGER.debug(
-            "Atrea UDP discovery raw response source=%s:%s raw=%s",
+            "Atrea UDP discovery response source=%s:%s bytes=%s",
             source[0],
             source[1],
-            payload.hex(" "),
+            len(payload),
         )
         parsed = parse_discovery_response(payload, source, seen)
         if parsed is None:
             continue
-        LOGGER.debug("Atrea UDP discovery parsed response=%s", parsed)
+        LOGGER.debug("Atrea UDP discovery parsed response=%s", _loggable_device(parsed))
         parsed_devices.append(parsed)
 
     deduplicated = _deduplicate_devices(parsed_devices)
@@ -413,9 +421,12 @@ async def async_rediscover_config_entry(
     if not ranked or ranked[0][1] <= 0:
         return None
     if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
-        LOGGER.debug("Rediscovery is ambiguous between devices: %s", ranked[:2])
+        LOGGER.debug(
+            "Rediscovery is ambiguous between devices: %s",
+            [(_loggable_device(device), score) for device, score in ranked[:2]],
+        )
         return None
 
     matched_device, score = ranked[0]
-    LOGGER.debug("Rediscovery matched device score=%s device=%s", score, matched_device)
+    LOGGER.debug("Rediscovery matched device score=%s device=%s", score, _loggable_device(matched_device))
     return dict(matched_device)

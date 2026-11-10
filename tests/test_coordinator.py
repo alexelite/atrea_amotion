@@ -3,10 +3,43 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 from unittest.mock import AsyncMock, Mock
 
 import custom_components.atrea_amotion as atrea_module
 from custom_components.atrea_amotion.__init__ import AtreaAMotionCoordinator
+
+
+async def test_websocket_logs_never_include_authentication_payloads(hass, caplog):
+    """Debug logs must be safe to share through both stages of login."""
+    coordinator = AtreaAMotionCoordinator(
+        hass, "Atrea", "192.0.2.10", "private-user", "private-password", "aMotion", "1"
+    )
+    coordinator.socket_state = "Open"
+    coordinator.ws = Mock()
+    coordinator._loop = asyncio.get_running_loop()
+    with caplog.at_level(logging.DEBUG, logger="custom_components.atrea_amotion"):
+        await coordinator.authenticate_with_server()
+        sent = json.loads(coordinator.ws.send.call_args.args[0])
+        assert sent["args"] == {"username": "private-user", "password": "private-password"}
+        reply = json.dumps({"id": coordinator._login_msg_id, "code": "OK", "response": "private-token"})
+        coordinator.on_message(coordinator.ws, reply[:20].encode())
+        coordinator.on_message(coordinator.ws, reply[20:].encode())
+        await asyncio.sleep(0)
+        await asyncio.sleep(0)
+        if coordinator._auth_task:
+            await coordinator._auth_task
+        assert coordinator._token == "private-token"
+        sent = json.loads(coordinator.ws.send.call_args.args[0])
+        assert sent["args"] == {"token": "private-token"}
+        coordinator.on_message(coordinator.ws, 'private-prefix{"id": 999} "private-non-object"')
+        await asyncio.sleep(0)
+    for secret in ("private-user", "private-password", "private-token", "private-prefix", "private-non-object"):
+        assert secret not in caplog.text
+    assert "Publishing websocket message" in caplog.text
+    assert "Received websocket message" in caplog.text
+    await coordinator.async_shutdown()
 
 
 async def test_reconnection_requires_fresh_live_and_filter_data(hass):
