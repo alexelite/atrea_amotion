@@ -161,6 +161,39 @@ def test_ui_diagram_data_nested_payload_is_unwrapped(hass) -> None:
     assert coordinator.value("fan_sup_operating_time") == 12602
 
 
+def test_diagram_scheme_tooltips_become_diagram_fields(hass) -> None:
+    """Variables listed by diagram components should be exposed as capabilities."""
+    coordinator = AtreaAMotionCoordinator(
+        hass=hass,
+        name="Atrea",
+        host="192.0.2.10",
+        username="user",
+        password="pass",
+        model="aMotion",
+        version="1.0.0",
+    )
+
+    coordinator._apply_diagram_scheme(
+        {
+            "components": {
+                "externalExchangers": {
+                    "preheater": {
+                        "activity": "preheater_active",
+                        "tooltips": ["preheater_type", "preheater_active", "preheater_factor"],
+                        "type": "ELECTRO_PWM",
+                    }
+                }
+            }
+        }
+    )
+
+    assert coordinator.async_capabilities().diagram_fields == {
+        "preheater_type",
+        "preheater_active",
+        "preheater_factor",
+    }
+
+
 def test_user_config_is_stored_and_available_for_entities(hass) -> None:
     """Persistent config values should be read from user_config_get."""
     coordinator = AtreaAMotionCoordinator(

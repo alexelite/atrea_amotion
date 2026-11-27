@@ -163,6 +163,9 @@
       "outside_temperature_mean": {
         "name": "Outside air mean"
       },
+      "preheater_factor": {
+        "name": "Preheater factor"
+      },
       "season_current": {
         "name": "Current season"
       },

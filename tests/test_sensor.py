@@ -13,6 +13,7 @@ from custom_components.atrea_amotion.const import DOMAIN
 class _MockCapabilities:
     unit_fields: set[str] = set()
     requests: set[str] = set()
+    diagram_fields: set[str] = {"preheater_factor"}
 
 
 class _MockCoordinator:
@@ -48,6 +49,8 @@ class _MockCoordinator:
             return True
         if key == "has_fault":
             return False
+        if key == "preheater_factor":
+            return 35
         return None
 
 
@@ -73,9 +76,32 @@ async def test_last_filter_reset_accepts_structured_date(hass, MockConfigEntry) 
     assert sensor.native_value == date(2026, 3, 21)
 
 
+async def test_preheater_factor_sensor_follows_diagram_scheme(hass, MockConfigEntry) -> None:
+    """Preheater factor sensor should appear when the diagram scheme lists it."""
+    coordinator = _MockCoordinator()
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Atrea",
+        data={CONF_NAME: "Atrea", CONF_HOST: "192.0.2.10"},
+    )
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = {"atrea": coordinator}
+
+    added_entities = []
+
+    def _async_add_entities(entities):
+        added_entities.extend(entities)
+
+    await async_setup_entry(hass, entry, _async_add_entities)
+
+    sensor = next(entity for entity in added_entities if entity.entity_description.key == "preheater_factor")
+    assert sensor.native_value == 35
+
+
 class _MockFanCapabilities:
     unit_fields = {"fan_sup_factor", "fan_eta_factor"}
     requests = {"fan_power_req_sup", "fan_power_req_eta"}
+    diagram_fields: set[str] = set()
 
 
 class _MockFanCoordinator:
@@ -119,6 +145,7 @@ async def test_requested_fan_speed_sensors_follow_capabilities(hass, MockConfigE
     assert "fan_sup_requested" in entity_by_key
     assert "fan_eta_requested" in entity_by_key
     assert "fan_requested" not in entity_by_key
+    assert "preheater_factor" not in entity_by_key
     assert entity_by_key["fan_sup_requested"].native_value == 97
     assert entity_by_key["fan_eta_requested"].native_value == 50
 

@@ -184,6 +184,14 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
         value_key="bypass_estim",
     ),
     AtreaSensorDescription(
+        key="preheater_factor",
+        translation_key="preheater_factor",
+        icon="mdi:radiator",
+        native_unit_of_measurement=PERCENTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="preheater_factor",
+    ),
+    AtreaSensorDescription(
         key="damper_io_state",
         translation_key="damper_io_state",
         icon="mdi:door-sliding",
@@ -314,6 +322,10 @@ UNIT_SENSOR_KEYS = {
     "mode_current",
 }
 
+DIAGRAM_SENSOR_KEYS = {
+    "preheater_factor",
+}
+
 
 async def async_setup_entry(
     hass,
@@ -339,6 +351,8 @@ def _is_supported_sensor(coordinator, description: AtreaSensorDescription) -> bo
         return description.request_key in coordinator.async_capabilities().requests
     if description.value_key in UNIT_SENSOR_KEYS:
         return description.value_key in coordinator.async_capabilities().unit_fields
+    if description.value_key in DIAGRAM_SENSOR_KEYS:
+        return description.value_key in coordinator.async_capabilities().diagram_fields
     return True
 
 
