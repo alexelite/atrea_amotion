@@ -163,6 +163,9 @@
       "outside_temperature_mean": {
         "name": "Průměrná venkovní teplota"
       },
+      "preheater_factor": {
+        "name": "Výkon předehřívače"
+      },
       "season_current": {
         "name": "Aktuální sezóna"
       },

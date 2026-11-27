@@ -71,6 +71,7 @@ class AtreaCapabilities:
     enum_values: dict[str, list[str]] = field(default_factory=dict)
     range_types: dict[str, dict[str, Any]] = field(default_factory=dict)
     diagram_components: dict[str, Any] = field(default_factory=dict)
+    diagram_fields: set[str] = field(default_factory=set)
     base_states: dict[int, dict[str, Any]] = field(default_factory=dict)
 
     @property
@@ -1126,6 +1127,16 @@ class AtreaAMotionCoordinator:
     def _apply_diagram_scheme(self, response: dict[str, Any]) -> None:
         """Store supplemental diagram metadata."""
         self.capabilities.diagram_components = response.get("components", {})
+        # components: {group: {component: {"tooltips": [variable, ...]}}}
+        self.capabilities.diagram_fields = {
+            tooltip
+            for group in self._as_dict(self.capabilities.diagram_components).values()
+            if isinstance(group, dict)
+            for component in group.values()
+            if isinstance(component, dict)
+            for tooltip in component.get("tooltips") or []
+            if isinstance(tooltip, str)
+        }
         self.capabilities.base_states = {
             item["id"]: item
             for item in response.get("baseStates", [])
@@ -1281,6 +1292,7 @@ class AtreaAMotionCoordinator:
             "damper_io_state": diagram.get("damper_io_state"),
             "fan_eta_operating_time": diagram.get("fan_eta_operating_time"),
             "fan_sup_operating_time": diagram.get("fan_sup_operating_time"),
+            "preheater_factor": diagram.get("preheater_factor"),
             "filters": filters,
             "filter_due_date": filters,
             "lastFilterReset": last_filter_reset,
