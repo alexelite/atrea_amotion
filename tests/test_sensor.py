@@ -11,7 +11,7 @@ from custom_components.atrea_amotion.const import DOMAIN
 
 
 class _MockCapabilities:
-    unit_fields: set[str] = set()
+    unit_fields: set[str] = {"flow_sup", "flow_eta"}
     requests: set[str] = set()
 
 
@@ -24,6 +24,10 @@ class _MockCoordinator:
         return _MockCapabilities()
 
     def value(self, key: str):
+        if key == "flow_sup":
+            return 115.0
+        if key == "flow_eta":
+            return 110.0
         if key == "last_filter_reset":
             return {"day": 21, "month": 3, "year": 2026}
         if key == "notification_count":
@@ -121,6 +125,8 @@ async def test_requested_fan_speed_sensors_follow_capabilities(hass, MockConfigE
     assert "fan_requested" not in entity_by_key
     assert entity_by_key["fan_sup_requested"].native_value == 97
     assert entity_by_key["fan_eta_requested"].native_value == 50
+    assert "supply_airflow" not in entity_by_key
+    assert "extract_airflow" not in entity_by_key
 
 
 async def test_active_notifications_sensor_exposes_card_payload(hass, MockConfigEntry) -> None:
@@ -149,3 +155,27 @@ async def test_active_notifications_sensor_exposes_card_payload(hass, MockConfig
     assert attrs["fault_count"] == 0
     assert attrs["primary_message"] == "S 105 - Filter replacement interval"
     assert attrs["notifications"][0]["code"] == "FILTER_INTERVAL"
+
+
+async def test_airflow_sensors_follow_unit_fields(hass, MockConfigEntry) -> None:
+    """Airflow sensors should appear when the control scheme lists flow fields."""
+    coordinator = _MockCoordinator()
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Atrea",
+        data={CONF_NAME: "Atrea", CONF_HOST: "192.0.2.10"},
+    )
+    hass.data.setdefault(DOMAIN, {})
+    hass.data[DOMAIN][entry.entry_id] = {"atrea": coordinator}
+
+    added_entities = []
+
+    def _async_add_entities(entities):
+        added_entities.extend(entities)
+
+    await async_setup_entry(hass, entry, _async_add_entities)
+
+    entity_by_key = {entity.entity_description.key: entity for entity in added_entities}
+
+    assert entity_by_key["supply_airflow"].native_value == 115.0
+    assert entity_by_key["extract_airflow"].native_value == 110.0

@@ -106,6 +106,9 @@
       "exhaust_temperature": {
         "name": "Exhaust air"
       },
+      "extract_airflow": {
+        "name": "Extract airflow"
+      },
       "extract_temperature": {
         "name": "Extract air"
       },
@@ -165,6 +168,9 @@
       },
       "season_current": {
         "name": "Current season"
+      },
+      "supply_airflow": {
+        "name": "Supply airflow"
       },
       "supply_temperature": {
         "name": "Supply air"
