@@ -14,7 +14,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CONF_NAME, PERCENTAGE, UnitOfTemperature
+from homeassistant.const import CONF_NAME, PERCENTAGE, UnitOfTemperature, UnitOfVolumeFlowRate
 from homeassistant.core import callback
 from homeassistant.util import dt as dt_util
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -176,6 +176,24 @@ ATREA_SENSORS: tuple[AtreaSensorDescription, ...] = (
         value_key="fan_sup_factor",
     ),
     AtreaSensorDescription(
+        key="supply_airflow",
+        translation_key="supply_airflow",
+        icon="mdi:weather-windy",
+        native_unit_of_measurement=UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR,
+        device_class=SensorDeviceClass.VOLUME_FLOW_RATE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="flow_sup",
+    ),
+    AtreaSensorDescription(
+        key="extract_airflow",
+        translation_key="extract_airflow",
+        icon="mdi:weather-windy",
+        native_unit_of_measurement=UnitOfVolumeFlowRate.CUBIC_METERS_PER_HOUR,
+        device_class=SensorDeviceClass.VOLUME_FLOW_RATE,
+        state_class=SensorStateClass.MEASUREMENT,
+        value_key="flow_eta",
+    ),
+    AtreaSensorDescription(
         key="bypass_estim",
         translation_key="bypass_estim",
         icon="mdi:pipe-valve",
@@ -310,6 +328,8 @@ UNIT_SENSOR_KEYS = {
     "temp_eta",
     "fan_eta_factor",
     "fan_sup_factor",
+    "flow_sup",
+    "flow_eta",
     "season_current",
     "mode_current",
 }

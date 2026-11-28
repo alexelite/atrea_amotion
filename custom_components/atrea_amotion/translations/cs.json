@@ -106,6 +106,9 @@
       "exhaust_temperature": {
         "name": "Teplota odpadního vzduchu"
       },
+      "extract_airflow": {
+        "name": "Průtok odtahovaného vzduchu"
+      },
       "extract_temperature": {
         "name": "Teplota odtahovaného vzduchu"
       },
@@ -165,6 +168,9 @@
       },
       "season_current": {
         "name": "Aktuální sezóna"
+      },
+      "supply_airflow": {
+        "name": "Průtok přiváděného vzduchu"
       },
       "supply_temperature": {
         "name": "Teplota přiváděného vzduchu"
